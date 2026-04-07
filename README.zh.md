@@ -83,9 +83,6 @@
 git clone https://github.com/misakaikato/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
-
-# 或通过 bunx 直接使用（无需克隆）
-bunx agent-knowledge-graph-cli --help
 ```
 
 ## 快速开始

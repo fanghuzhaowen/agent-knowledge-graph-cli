@@ -83,9 +83,6 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 git clone https://github.com/misakaikato/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
-
-# Or use directly with bunx (no clone needed)
-bunx agent-knowledge-graph-cli --help
 ```
 
 ## Quick Start
