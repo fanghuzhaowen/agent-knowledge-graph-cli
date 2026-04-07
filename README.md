@@ -76,6 +76,13 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
                   └── pages/
 ```
 
+## Why Choose `kg`
+
+- **Lightweight & Zero Dependencies** — No database, no server, no runtime services. A single `kg.json` file is all you need. Ship it, version it, share it — zero ops cost
+- **Single-File Storage** — All nodes, edges, evidence links, and operation logs live in one `kg.json`. No migrations, no schema sync, no distributed state. Portable and inspectable
+- **Clean & Concise Codebase** — Minimal TypeScript implementation, easy to read, extend, and embed into any agent toolchain
+- **LLM Envelope Mechanism (`LlmTaskEnvelope`)** — No need to integrate any LLM API. The CLI outputs structured task envelopes (context + instructions + prompt + output schema). Your existing Agent reads the envelope and calls its own LLM directly — `kg` never touches model keys or endpoints
+
 ## Installation
 
 ```bash
