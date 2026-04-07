@@ -1,147 +1,181 @@
 # Knowledge Graph CLI (`kg`)
 
-图谱驱动的迭代式深度调研工具。面向 LLM/Agent 调用设计，CLI 只做图谱操作与任务编排，不直接调用模型。
+[中文](./README.zh.md)
 
-## 安装
+A graph-driven iterative deep research tool. Designed for LLM/Agent invocation — the CLI handles only graph operations and task orchestration, never calling models directly.
+
+## Why AI Agents Need `kg`
+
+An LLM's reasoning quality depends on context quality. `kg` provides agents with **structured long-term memory** — organizing fragmented research information into a queryable, reasonable knowledge graph that lets agents maintain cognitive consistency across multi-round iterations instead of getting lost in raw text.
+
+**Core Value for Agents:**
+
+- **Graph-as-Memory** — Agents no longer rely on sliding context windows or vector retrieval. Instead, they store and reason over knowledge through a semantic network of entities, claims, evidence, and questions
+- **Zero Model Coupling** — The CLI never calls any LLM API. It outputs standardized `LlmTaskEnvelope` objects (containing context, instructions, prompt templates, and output schemas), letting agents freely choose their model and invocation strategy
+- **Evidence Chain Tracking** — Every Claim traces back to its original Source → Evidence → Link relationship, supporting multiple evidence roles (`supports`, `contradicts`, `weakly_supported`). Agents achieve genuine evidence-based reasoning
+- **Automatic Gap Detection** — `gap detect` proactively discovers knowledge blind spots (unsubstantiated claims, unanswered questions, orphaned nodes), driving the agent's next autonomous search round
+- **Iterative Research Loop** — `research continue` orchestrates the full "search → extract → challenge → fill gaps" cycle. Agents complete deep research simply by looping
+- **Externalized Process Memory** — Task checklists persist to disk, allowing agents to seamlessly resume unfinished work across sessions
+- **Lightweight & Dependency-Free** — Single-file JSON storage (`kg.json`), no database required, zero ops cost. Embeds into any agent toolchain
+
+**Typical Agent Integration Architecture:**
+
+```
+┌─────────────┐   CLI calls    ┌─────────────┐               ┌─────────────┐
+│ Agent Core  │ ──────────────→ │   kg CLI    │   LLM calls   │  LLM API    │
+│ (Python/TS) │ ←── JSON out ──│  (this tool) │               │ (GPT/Claude) │
+│             │                │             │               │             │
+│ Search/     │                │ Graph Ops   │               │             │
+│ Crawl/Write │                │ Task Orchest│               │             │
+└─────────────┘                └─────────────┘               └─────────────┘
+       │                              │
+       │       Write results          │  Read kg.json
+       └───────→ temp/{topic}/ ←──────┘
+                  ├── kg.json
+                  ├── search_results/
+                  └── pages/
+```
+
+## Installation
 
 ```bash
 bun install
 ```
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 创建新调研主题
-bun run kg new-topic "Gemma4评测"
+# Create a new research topic
+bun run kg new-topic "Gemma4 Review"
 
-# 所有后续命令通过 --dir 指定研究目录
-DIR="./temp/Gemma4评测_1712130000000"
+# All subsequent commands use --dir to specify the research directory
+DIR="./temp/Gemma4Review_1712130000000"
 
-# 创建调研任务
-bun run kg task create --title "Gemma4 评测调研" --goal "评估官方 benchmark 是否有独立证据支持" --dir $DIR
+# Create a research task
+bun run kg task create --title "Gemma4 Review Research" --goal "Evaluate whether official benchmarks have independent evidence support" --dir $DIR
 
-# 添加来源
+# Add a source
 echo '{"title":"Gemma 4 Technical Report","type":"webpage","attrs":{"uri":"https://example.com/gemma4-report","author":"Google"}}' | bun run kg node upsert --json-in - --dir $DIR
 
-# 查看所有节点
+# List all nodes
 bun run kg node list --dir $DIR
 ```
 
-## 命令总览
+## Command Reference
 
-### 基础图谱操作
+### Basic Graph Operations
 
 ```bash
-# 节点
+# Nodes
 bun run kg node get <id> --dir <dir>
 bun run kg node list [--kind Entity] [--status open] --dir <dir>
 bun run kg node upsert --json-in data.json --dir <dir>
 bun run kg node delete <id> --dir <dir>
 
-# 边
+# Edges
 bun run kg edge create --from ent_1 --type related_to --to ent_2 --dir <dir>
 bun run kg edge get <id> --dir <dir>
 bun run kg edge list [--from ent_1] [--type related_to] --dir <dir>
 bun run kg edge delete <id> --dir <dir>
 ```
 
-### 证据管理
+### Evidence Management
 
 ```bash
-# 添加来源
-echo '{"title":"论文标题","type":"webpage"}' | bun run kg node upsert --json-in - --dir <dir>
+# Add a source
+echo '{"title":"Paper Title","type":"webpage"}' | bun run kg node upsert --json-in - --dir <dir>
 
-# 查看来源
+# Get a source
 bun run kg source get <id> --dir <dir>
 
-# 添加证据
-echo '{"sourceId":"src_xxx","text":"原文引用片段","kind":"Evidence"}' | bun run kg node upsert --json-in - --dir <dir>
+# Add evidence
+echo '{"sourceId":"src_xxx","text":"Original quote","kind":"Evidence"}' | bun run kg node upsert --json-in - --dir <dir>
 
-# 链接证据到 Claim
+# Link evidence to a Claim
 bun run kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
 
-# 查看某个目标的所有证据
+# List all evidence for a target
 bun run kg evidence list --target clm_1 --dir <dir>
 ```
 
-### Claim 管理
+### Claim Management
 
 ```bash
-# 创建 Claim
-echo '{"text":"Gemma 4 31B 在 MMLU Pro 上达到 85.2%","status":"proposed","kind":"Claim"}' | bun run kg node upsert --json-in - --dir <dir>
+# Create a Claim
+echo '{"text":"Gemma 4 31B scores 85.2% on MMLU Pro","status":"proposed","kind":"Claim"}' | bun run kg node upsert --json-in - --dir <dir>
 
-# 更新状态
+# Update status
 bun run kg claim set-status clm_1 supported --dir <dir>
 
-# 查看冲突
+# Check conflicts
 bun run kg claim conflicts clm_1 --dir <dir>
 ```
 
 ### Question / Hypothesis
 
 ```bash
-# 添加问题
-echo '{"text":"是否有第三方独立评测？","status":"open","kind":"Question"}' | bun run kg node upsert --json-in - --dir <dir>
+# Add a question
+echo '{"text":"Are there third-party independent evaluations?","status":"open","kind":"Question"}' | bun run kg node upsert --json-in - --dir <dir>
 
-# 列出未解决问题
+# List open questions
 bun run kg node list --kind Question --status open --dir <dir>
 
-# 添加假设
-echo '{"text":"独立评测分数可能低于官方","status":"proposed","kind":"Hypothesis"}' | bun run kg node upsert --json-in - --dir <dir>
+# Add a hypothesis
+echo '{"text":"Independent evaluation scores may be lower than official","status":"proposed","kind":"Hypothesis"}' | bun run kg node upsert --json-in - --dir <dir>
 ```
 
-### 图谱查询
+### Graph Queries
 
 ```bash
-# 邻居遍历（BFS）
+# Neighbor traversal (BFS)
 bun run kg graph neighbors ent_1 --depth 2 --dir <dir>
 
-# 子图提取
+# Subgraph extraction
 bun run kg graph subgraph --focus ent_1 --depth 2 --dir <dir>
 
-# 统计
+# Statistics
 bun run kg graph stats --dir <dir>
 
-# 图谱检查
+# Graph lint
 bun run kg graph lint --dir <dir>
 ```
 
-### 缺口检测
+### Gap Detection
 
 ```bash
-# 自动检测知识缺口
+# Auto-detect knowledge gaps
 bun run kg gap detect --dir <dir>
 
-# 查看已检测到的缺口
+# List detected gaps
 bun run kg gap list --dir <dir>
 ```
 
-### LLM 任务编排
+### LLM Task Orchestration
 
-所有 `llm` 命令不直接调用模型，只输出 JSON 格式的 `LlmTaskEnvelope`（含上下文、指令、推荐 prompt、输出 schema），由上层 Agent 执行。
+All `llm` commands do not call models directly. They output JSON-formatted `LlmTaskEnvelope` objects (containing context, instructions, recommended prompts, and output schemas) for the upstream agent to execute.
 
 ```bash
-# 从来源提取实体
+# Extract entities from a source
 bun run kg llm extract-entities --source src_1 --dir <dir>
 
-# 从来源提取断言
+# Extract claims from a source
 bun run kg llm extract-claims --source src_1 --dir <dir>
 
-# 生成新研究问题
+# Generate new research questions
 bun run kg llm generate-questions --dir <dir>
 
-# 生成下一轮搜索词
+# Generate next-round search queries
 bun run kg llm next-search-queries --dir <dir>
 
-# 评估证据质量
+# Assess evidence quality
 bun run kg llm assess-evidence --claim clm_1 --dir <dir>
 
-# 实体/Claim 去重
+# Entity/Claim deduplication
 bun run kg llm normalize-entities --dir <dir>
 bun run kg llm normalize-claims --dir <dir>
 ```
 
-## LLM 任务输出示例
+## LLM Task Output Example
 
 ```json
 {
@@ -165,22 +199,22 @@ bun run kg llm normalize-claims --dir <dir>
 }
 ```
 
-## 节点类型
+## Node Types
 
-| 类型 | 说明 | 关键字段 |
-|------|------|----------|
-| `Entity` | 客观对象（人/组织/概念/...） | type, title |
-| `Claim` | 可验证断言 | text, status, confidence |
-| `Source` | 原始来源 | title, attrs.uri |
-| `Evidence` | 证据片段 | text, attrs.sourceId |
-| `Observation` | 候选事实 | text, status |
-| `Question` | 待回答问题 | text, status, attrs.priority |
-| `Hypothesis` | 待验证假设 | text, status |
-| `Gap` | 知识缺口 | text, attrs.gapType |
-| `Task` | 调研任务 | title, goal, status |
-| `Value` | 数值节点 | text |
+| Type | Description | Key Fields |
+|------|-------------|------------|
+| `Entity` | Objective objects (person/org/concept/...) | type, title |
+| `Claim` | Verifiable assertion | text, status, confidence |
+| `Source` | Original source material | title, attrs.uri |
+| `Evidence` | Evidence excerpt | text, attrs.sourceId |
+| `Observation` | Candidate fact | text, status |
+| `Question` | Question to answer | text, status, attrs.priority |
+| `Hypothesis` | Hypothesis to verify | text, status |
+| `Gap` | Knowledge gap | text, attrs.gapType |
+| `Task` | Research task | title, goal, status |
+| `Value` | Numeric node | text |
 
-## Claim 状态流转
+## Claim Status Flow
 
 ```
 proposed → supported → deprecated
@@ -188,22 +222,22 @@ proposed → supported → deprecated
                                     → superseded
 ```
 
-## 存储格式
+## Storage Format
 
-每个研究目录包含一个 `kg.json` 文件，存储所有节点、边、证据链接和操作日志。
+Each research directory contains a single `kg.json` file storing all nodes, edges, evidence links, and operation logs.
 
 ```
 temp/{topic}_{timestamp}/
-├── kg.json          # 唯一数据来源
-├── search_results/  # 搜索原始结果（由上层 Agent 管理）
-└── pages/           # 抓取页面全文（由上层 Agent 管理）
+├── kg.json          # Single source of truth
+├── search_results/  # Raw search results (managed by upstream Agent)
+└── pages/           # Crawled page content (managed by upstream Agent)
 ```
 
-## 测试
+## Testing
 
 ```bash
-bun test              # 单元测试
-bun test tests/e2e/   # E2E 测试
+bun test              # Unit tests
+bun test tests/e2e/   # E2E tests
 ```
 
 ## License
