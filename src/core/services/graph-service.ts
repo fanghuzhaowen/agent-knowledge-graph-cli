@@ -2,13 +2,67 @@ import type { BaseNode, Edge, EvidenceLink, NodeKind, OpLog } from "../models/ty
 import type { GraphStore } from "../../storage/graph-store";
 import { generateId } from "../../utils/ids";
 import { now } from "../../utils/time";
+import { validateEdge, validateNode } from "../schemas";
 
 export class GraphService {
 	constructor(private store: GraphStore) {}
 
-	upsertNode(data: Partial<BaseNode> & { id?: string; kind: NodeKind }): BaseNode {
+	private normalizeTaskIds(taskId?: string | string[], attrs?: Record<string, unknown>): string[] {
+		const taskIds = new Set<string>();
+
+		const collect = (value: unknown) => {
+			if (typeof value === "string" && value.trim().length > 0) {
+				taskIds.add(value);
+				return;
+			}
+
+			if (Array.isArray(value)) {
+				for (const item of value) {
+					if (typeof item === "string" && item.trim().length > 0) {
+						taskIds.add(item);
+					}
+				}
+			}
+		};
+
+		collect(taskId);
+		collect(attrs?.taskId);
+		collect(attrs?.taskIds);
+
+		return [...taskIds];
+	}
+
+	private ensureTaskExists(taskId: string): void {
+		if (!this.store.getTask(taskId)) {
+			throw new Error(`任务不存在: ${taskId}`);
+		}
+	}
+
+	private belongsToTask(node: BaseNode, taskId: string): boolean {
+		if (this.store.getNodeTaskIds(node.id).includes(taskId)) {
+			return true;
+		}
+
+		const attrTaskId = node.attrs?.taskId;
+		if (typeof attrTaskId === "string" && attrTaskId === taskId) {
+			return true;
+		}
+
+		const attrTaskIds = node.attrs?.taskIds;
+		if (
+			Array.isArray(attrTaskIds) &&
+			attrTaskIds.some((id) => typeof id === "string" && id === taskId)
+		) {
+			return true;
+		}
+
+		return false;
+	}
+
+	upsertNode(data: Partial<BaseNode> & { id?: string; kind: NodeKind; taskId?: string | string[] }): BaseNode {
 		const timestamp = now();
 		let node: BaseNode;
+		const taskIds = this.normalizeTaskIds(data.taskId, data.attrs);
 
 		if (data.id) {
 			const existing = this.store.getNode(data.id);
@@ -50,7 +104,16 @@ export class GraphService {
 			};
 		}
 
+		node = validateNode(node);
+
+		for (const taskId of taskIds) {
+			this.ensureTaskExists(taskId);
+		}
+
 		this.store.upsertNode(node);
+		for (const taskId of taskIds) {
+			this.store.linkNodeToTask(node.id, taskId, generateId("nodeTaskLink"));
+		}
 		this.store.addOpLog({
 			id: generateId("opLog"),
 			opType: data.id && this.store.getNode(data.id) ? "update_node" : "create_node",
@@ -70,9 +133,8 @@ export class GraphService {
 		return this.store.listNodes((n) => {
 			if (filters?.kind && n.kind !== filters.kind) return false;
 			if (filters?.status && n.status !== filters.status) return false;
-			if (filters?.taskId) {
-				const taskIds = this.store.getNodeTaskIds(n.id);
-				if (!taskIds.includes(filters.taskId)) return false;
+			if (filters?.taskId && !this.belongsToTask(n, filters.taskId)) {
+				return false;
 			}
 			return true;
 		});
@@ -123,16 +185,23 @@ export class GraphService {
 			updatedAt: timestamp,
 		};
 
-		this.store.createEdge(edge);
+		const validatedEdge = validateEdge(edge);
+
+		this.store.createEdge(validatedEdge);
 		this.store.addOpLog({
 			id: generateId("opLog"),
 			opType: "create_edge",
 			actor: "human",
-			payload: { edgeId: edge.id, type: edge.type, fromId: edge.fromId, toId: edge.toId },
+			payload: {
+				edgeId: validatedEdge.id,
+				type: validatedEdge.type,
+				fromId: validatedEdge.fromId,
+				toId: validatedEdge.toId,
+			},
 			createdAt: timestamp,
 		});
 		this.store.save();
-		return edge;
+		return validatedEdge;
 	}
 
 	getEdge(id: string): Edge | undefined {
@@ -202,6 +271,68 @@ export class GraphService {
 		return { nodes: collectedNodes, edges: collectedEdges };
 	}
 
+	/**
+	 * Find shortest path between two nodes using BFS.
+	 */
+	findPath(fromId: string, toId: string, maxDepth: number = 4): { nodes: BaseNode[]; edges: Edge[] } | null {
+		const fromNode = this.store.getNode(fromId);
+		if (!fromNode) throw new Error(`源节点不存在: ${fromId}`);
+		const toNode = this.store.getNode(toId);
+		if (!toNode) throw new Error(`目标节点不存在: ${toId}`);
+		if (fromId === toId) return { nodes: [fromNode], edges: [] };
+
+		// BFS with parent tracking
+		const visited = new Set<string>([fromId]);
+		const parent = new Map<string, { nodeId: string; edgeId: string }>();
+
+		let frontier = new Set<string>([fromId]);
+
+		for (let d = 0; d < maxDepth; d++) {
+			const nextFrontier = new Set<string>();
+
+			for (const currentId of frontier) {
+				const edges = this.store.listEdges(
+					(e) => e.fromId === currentId || e.toId === currentId,
+				);
+
+				for (const edge of edges) {
+					const neighborId = edge.fromId === currentId ? edge.toId : edge.fromId;
+					if (visited.has(neighborId)) continue;
+
+					visited.add(neighborId);
+					parent.set(neighborId, { nodeId: currentId, edgeId: edge.id });
+					nextFrontier.add(neighborId);
+
+					if (neighborId === toId) {
+						// Reconstruct path
+						const pathEdges: Edge[] = [];
+						const pathNodeIds = new Set<string>([toId]);
+						let current: string | undefined = toId;
+
+						while (current && current !== fromId) {
+							const p = parent.get(current);
+							if (!p) break;
+							const edge = this.store.getEdge(p.edgeId);
+							if (edge) pathEdges.unshift(edge);
+							pathNodeIds.add(p.nodeId);
+							current = p.nodeId;
+						}
+
+						const pathNodes = [...pathNodeIds]
+							.map((id) => this.store.getNode(id))
+							.filter((n): n is BaseNode => n !== undefined);
+
+						return { nodes: pathNodes, edges: pathEdges };
+					}
+				}
+			}
+
+			frontier = nextFrontier;
+		}
+
+		return null; // No path found within maxDepth
+	}
+
 	getSubgraph(filters: {
 		taskId?: string;
 		focusId?: string;
@@ -214,7 +345,9 @@ export class GraphService {
 				result.nodes.unshift(focusNode);
 			}
 			if (filters.taskId) {
-				const taskNodeIds = new Set(this.store.getTaskNodeIds(filters.taskId));
+				const taskNodeIds = new Set(
+					this.listNodes({ taskId: filters.taskId }).map((node) => node.id),
+				);
 				result.nodes = result.nodes.filter((n) => taskNodeIds.has(n.id));
 				const nodeIds = new Set(result.nodes.map((n) => n.id));
 				result.edges = result.edges.filter(
@@ -225,11 +358,8 @@ export class GraphService {
 		}
 
 		if (filters.taskId) {
-			const nodeIds = this.store.getTaskNodeIds(filters.taskId);
-			const nodes = nodeIds
-				.map((id) => this.store.getNode(id))
-				.filter((n): n is BaseNode => n !== undefined);
-			const nodeIdSet = new Set(nodeIds);
+			const nodes = this.listNodes({ taskId: filters.taskId });
+			const nodeIdSet = new Set(nodes.map((node) => node.id));
 			const edges = this.store.listEdges(
 				(e) => nodeIdSet.has(e.fromId) && nodeIdSet.has(e.toId),
 			);
@@ -250,9 +380,10 @@ export class GraphService {
 	} {
 		const nodes = taskId ? this.listNodes({ taskId }) : this.store.listNodes();
 		const nodeIds = new Set(nodes.map((n) => n.id));
-		const edges = this.store
-			.listEdges()
-			.filter((e) => nodeIds.has(e.fromId) || nodeIds.has(e.toId));
+		const edges = this.store.listEdges().filter((e) => {
+			if (!taskId) return true;
+			return nodeIds.has(e.fromId) && nodeIds.has(e.toId);
+		});
 
 		const nodeCountByKind: Record<string, number> = {};
 		for (const node of nodes) {
@@ -283,11 +414,11 @@ export class GraphService {
 		}> = [];
 
 		const nodes = taskId ? this.listNodes({ taskId }) : this.store.listNodes();
-		const nodeIds = new Set(nodes.map((n) => n.id));
 
-		// Check for orphan nodes (no edges, not Task kind)
+		// Check for orphan nodes (no edges, not Task/Question/Gap kind — these are valid standalone)
+		const standaloneKinds = new Set(["Task", "Question", "Gap", "Hypothesis", "Source"]);
 		for (const node of nodes) {
-			if (node.kind === "Task") continue;
+			if (standaloneKinds.has(node.kind)) continue;
 			const hasEdges = this.store.listEdges(
 				(e) => e.fromId === node.id || e.toId === node.id,
 			);
@@ -332,6 +463,28 @@ export class GraphService {
 				issues.push({
 					severity: "warning",
 					message: `断言 "${node.text ?? node.title ?? node.id}" 无证据支持`,
+					nodeId: node.id,
+				});
+			}
+			// Check for shallow claims (text too short)
+			const text = node.text ?? "";
+			if (text.length < 50) {
+				issues.push({
+					severity: "warning",
+					message: `断言 "${text.substring(0, 30)}..." 过短（${text.length}字），应≥50字，包含完整知识（机制+条件+证据）`,
+					nodeId: node.id,
+				});
+			}
+		}
+
+		// Check for Evidence text length
+		for (const node of nodes) {
+			if (node.kind !== "Evidence") continue;
+			const text = node.text ?? "";
+			if (text.length < 20) {
+				issues.push({
+					severity: "warning",
+					message: `证据 "${text.substring(0, 20)}..." 过短（${text.length}字），应≥20字，直接引用原文`,
 					nodeId: node.id,
 				});
 			}

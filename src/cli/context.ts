@@ -6,6 +6,9 @@ import { ClaimService } from "../core/services/claim-service";
 import { QuestionService } from "../core/services/question-service";
 import { GapService } from "../core/services/gap-service";
 import { LlmTaskService } from "../core/services/llm-task-service";
+import { ReportService } from "../core/services/report-service";
+import { ResearchService } from "../core/services/research-service";
+import { TaskChecklistService } from "../core/services/task-checklist-service";
 
 export interface AppContext {
 	store: GraphStore;
@@ -25,8 +28,11 @@ function createServices(store: GraphStore): Services {
 	const claim = new ClaimService(store, graph);
 	const question = new QuestionService(store, graph);
 	const gap = new GapService(store, graph);
-	const llmTask = new LlmTaskService(store, graph, claim, question, gap, evidence);
-	return { graph, evidence, claim, question, gap, llmTask };
+	const taskChecklist = new TaskChecklistService(store);
+	const llmTask = new LlmTaskService(store, graph, claim, question, gap, evidence, taskChecklist);
+	const report = new ReportService(store, graph, evidence);
+	const research = new ResearchService(store, graph, llmTask, question, gap, taskChecklist);
+	return { graph, evidence, claim, question, gap, llmTask, report, research, taskChecklist };
 }
 
 export function initContext(dir: string): AppContext {

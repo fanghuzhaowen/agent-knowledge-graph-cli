@@ -14,17 +14,23 @@ export class QuestionService {
 		text: string;
 		questionType?: string;
 		priority?: number;
+		status?: QuestionStatus;
 		attrs?: Record<string, unknown>;
+		taskId?: string | string[];
 	}): BaseNode {
+		if (data.status && !VALID_QUESTION_STATUSES.includes(data.status)) {
+			throw new Error(`Invalid question status: ${data.status}`);
+		}
 		return this.graphService.upsertNode({
 			kind: "Question",
 			text: data.text,
-			status: "open",
+			status: data.status ?? "open",
 			attrs: {
 				questionType: data.questionType,
 				priority: data.priority,
 				...data.attrs,
 			},
+			taskId: data.taskId,
 		});
 	}
 
