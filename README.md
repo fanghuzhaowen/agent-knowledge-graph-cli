@@ -83,25 +83,36 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
+
+# Link globally so you can use `kg` directly
+bun link
+```
+
+After linking, all commands can be run with just `kg` instead of `bun run kg`:
+
+```bash
+kg --help
+kg new-topic "My Research"
+kg node list --dir ./path/to/research
 ```
 
 ## Quick Start
 
 ```bash
 # Create a new research topic
-bun run kg new-topic "Gemma4 Review"
+kg new-topic "Gemma4 Review"
 
 # All subsequent commands use --dir to specify the research directory
 DIR="./temp/Gemma4Review_1712130000000"
 
 # Create a research task
-bun run kg task create --title "Gemma4 Review Research" --goal "Evaluate whether official benchmarks have independent evidence support" --dir $DIR
+kg task create --title "Gemma4 Review Research" --goal "Evaluate whether official benchmarks have independent evidence support" --dir $DIR
 
 # Add a source
-echo '{"title":"Gemma 4 Technical Report","type":"webpage","attrs":{"uri":"https://example.com/gemma4-report","author":"Google"}}' | bun run kg node upsert --json-in - --dir $DIR
+echo '{"title":"Gemma 4 Technical Report","type":"webpage","attrs":{"uri":"https://example.com/gemma4-report","author":"Google"}}' | kg node upsert --json-in - --dir $DIR
 
 # List all nodes
-bun run kg node list --dir $DIR
+kg node list --dir $DIR
 ```
 
 ## Command Reference
@@ -110,87 +121,87 @@ bun run kg node list --dir $DIR
 
 ```bash
 # Nodes
-bun run kg node get <id> --dir <dir>
-bun run kg node list [--kind Entity] [--status open] --dir <dir>
-bun run kg node upsert --json-in data.json --dir <dir>
-bun run kg node delete <id> --dir <dir>
+kg node get <id> --dir <dir>
+kg node list [--kind Entity] [--status open] --dir <dir>
+kg node upsert --json-in data.json --dir <dir>
+kg node delete <id> --dir <dir>
 
 # Edges
-bun run kg edge create --from ent_1 --type related_to --to ent_2 --dir <dir>
-bun run kg edge get <id> --dir <dir>
-bun run kg edge list [--from ent_1] [--type related_to] --dir <dir>
-bun run kg edge delete <id> --dir <dir>
+kg edge create --from ent_1 --type related_to --to ent_2 --dir <dir>
+kg edge get <id> --dir <dir>
+kg edge list [--from ent_1] [--type related_to] --dir <dir>
+kg edge delete <id> --dir <dir>
 ```
 
 ### Evidence Management
 
 ```bash
 # Add a source
-echo '{"title":"Paper Title","type":"webpage"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"title":"Paper Title","type":"webpage"}' | kg node upsert --json-in - --dir <dir>
 
 # Get a source
-bun run kg source get <id> --dir <dir>
+kg source get <id> --dir <dir>
 
 # Add evidence
-echo '{"sourceId":"src_xxx","text":"Original quote","kind":"Evidence"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"sourceId":"src_xxx","text":"Original quote","kind":"Evidence"}' | kg node upsert --json-in - --dir <dir>
 
 # Link evidence to a Claim
-bun run kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
+kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
 
 # List all evidence for a target
-bun run kg evidence list --target clm_1 --dir <dir>
+kg evidence list --target clm_1 --dir <dir>
 ```
 
 ### Claim Management
 
 ```bash
 # Create a Claim
-echo '{"text":"Gemma 4 31B scores 85.2% on MMLU Pro","status":"proposed","kind":"Claim"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"text":"Gemma 4 31B scores 85.2% on MMLU Pro","status":"proposed","kind":"Claim"}' | kg node upsert --json-in - --dir <dir>
 
 # Update status
-bun run kg claim set-status clm_1 supported --dir <dir>
+kg claim set-status clm_1 supported --dir <dir>
 
 # Check conflicts
-bun run kg claim conflicts clm_1 --dir <dir>
+kg claim conflicts clm_1 --dir <dir>
 ```
 
 ### Question / Hypothesis
 
 ```bash
 # Add a question
-echo '{"text":"Are there third-party independent evaluations?","status":"open","kind":"Question"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"text":"Are there third-party independent evaluations?","status":"open","kind":"Question"}' | kg node upsert --json-in - --dir <dir>
 
 # List open questions
-bun run kg node list --kind Question --status open --dir <dir>
+kg node list --kind Question --status open --dir <dir>
 
 # Add a hypothesis
-echo '{"text":"Independent evaluation scores may be lower than official","status":"proposed","kind":"Hypothesis"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"text":"Independent evaluation scores may be lower than official","status":"proposed","kind":"Hypothesis"}' | kg node upsert --json-in - --dir <dir>
 ```
 
 ### Graph Queries
 
 ```bash
 # Neighbor traversal (BFS)
-bun run kg graph neighbors ent_1 --depth 2 --dir <dir>
+kg graph neighbors ent_1 --depth 2 --dir <dir>
 
 # Subgraph extraction
-bun run kg graph subgraph --focus ent_1 --depth 2 --dir <dir>
+kg graph subgraph --focus ent_1 --depth 2 --dir <dir>
 
 # Statistics
-bun run kg graph stats --dir <dir>
+kg graph stats --dir <dir>
 
 # Graph lint
-bun run kg graph lint --dir <dir>
+kg graph lint --dir <dir>
 ```
 
 ### Gap Detection
 
 ```bash
 # Auto-detect knowledge gaps
-bun run kg gap detect --dir <dir>
+kg gap detect --dir <dir>
 
 # List detected gaps
-bun run kg gap list --dir <dir>
+kg gap list --dir <dir>
 ```
 
 ### Graph Visualization
@@ -199,13 +210,13 @@ Export the knowledge graph as a single interactive HTML file with D3.js force-di
 
 ```bash
 # Export full graph
-bun run kg graph export-html -o graph.html --dir <dir>
+kg graph export-html -o graph.html --dir <dir>
 
 # Export subgraph from a focus node
-bun run kg graph export-html -o graph.html --focus ent_1 --depth 3 --dir <dir>
+kg graph export-html -o graph.html --focus ent_1 --depth 3 --dir <dir>
 
 # Export graph for a specific task
-bun run kg graph export-html -o graph.html --task task_1 --dir <dir>
+kg graph export-html -o graph.html --task task_1 --dir <dir>
 ```
 
 **Features:**
@@ -226,13 +237,13 @@ bun run kg graph export-html -o graph.html --task task_1 --dir <dir>
 
 ```bash
 # Generate markdown report
-bun run kg report generate --task task_1 --dir <dir>
+kg report generate --task task_1 --dir <dir>
 
 # Generate JSON report
-bun run kg report generate --task task_1 --format json -o report.json --dir <dir>
+kg report generate --task task_1 --format json -o report.json --dir <dir>
 
 # List all citations
-bun run kg report citations --dir <dir>
+kg report citations --dir <dir>
 ```
 
 ### LLM Task Orchestration
@@ -241,23 +252,23 @@ All `llm` commands do not call models directly. They output JSON-formatted `LlmT
 
 ```bash
 # Extract entities from a source
-bun run kg llm extract-entities --source src_1 --dir <dir>
+kg llm extract-entities --source src_1 --dir <dir>
 
 # Extract claims from a source
-bun run kg llm extract-claims --source src_1 --dir <dir>
+kg llm extract-claims --source src_1 --dir <dir>
 
 # Generate new research questions
-bun run kg llm generate-questions --dir <dir>
+kg llm generate-questions --dir <dir>
 
 # Generate next-round search queries
-bun run kg llm next-search-queries --dir <dir>
+kg llm next-search-queries --dir <dir>
 
 # Assess evidence quality
-bun run kg llm assess-evidence --claim clm_1 --dir <dir>
+kg llm assess-evidence --claim clm_1 --dir <dir>
 
 # Entity/Claim deduplication
-bun run kg llm normalize-entities --dir <dir>
-bun run kg llm normalize-claims --dir <dir>
+kg llm normalize-entities --dir <dir>
+kg llm normalize-claims --dir <dir>
 ```
 
 ## LLM Task Output Example

@@ -83,25 +83,36 @@
 git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
+
+# 全局链接，之后可直接使用 `kg` 命令
+bun link
+```
+
+链接后，所有命令可以直接用 `kg` 开头，无需再输入 `bun run`：
+
+```bash
+kg --help
+kg new-topic "我的调研"
+kg node list --dir ./path/to/research
 ```
 
 ## 快速开始
 
 ```bash
 # 创建新调研主题
-bun run kg new-topic "Gemma4评测"
+kg new-topic "Gemma4评测"
 
 # 所有后续命令通过 --dir 指定研究目录
 DIR="./temp/Gemma4评测_1712130000000"
 
 # 创建调研任务
-bun run kg task create --title "Gemma4 评测调研" --goal "评估官方 benchmark 是否有独立证据支持" --dir $DIR
+kg task create --title "Gemma4 评测调研" --goal "评估官方 benchmark 是否有独立证据支持" --dir $DIR
 
 # 添加来源
-echo '{"title":"Gemma 4 Technical Report","type":"webpage","attrs":{"uri":"https://example.com/gemma4-report","author":"Google"}}' | bun run kg node upsert --json-in - --dir $DIR
+echo '{"title":"Gemma 4 Technical Report","type":"webpage","attrs":{"uri":"https://example.com/gemma4-report","author":"Google"}}' | kg node upsert --json-in - --dir $DIR
 
 # 查看所有节点
-bun run kg node list --dir $DIR
+kg node list --dir $DIR
 ```
 
 ## 命令总览
@@ -110,87 +121,87 @@ bun run kg node list --dir $DIR
 
 ```bash
 # 节点
-bun run kg node get <id> --dir <dir>
-bun run kg node list [--kind Entity] [--status open] --dir <dir>
-bun run kg node upsert --json-in data.json --dir <dir>
-bun run kg node delete <id> --dir <dir>
+kg node get <id> --dir <dir>
+kg node list [--kind Entity] [--status open] --dir <dir>
+kg node upsert --json-in data.json --dir <dir>
+kg node delete <id> --dir <dir>
 
 # 边
-bun run kg edge create --from ent_1 --type related_to --to ent_2 --dir <dir>
-bun run kg edge get <id> --dir <dir>
-bun run kg edge list [--from ent_1] [--type related_to] --dir <dir>
-bun run kg edge delete <id> --dir <dir>
+kg edge create --from ent_1 --type related_to --to ent_2 --dir <dir>
+kg edge get <id> --dir <dir>
+kg edge list [--from ent_1] [--type related_to] --dir <dir>
+kg edge delete <id> --dir <dir>
 ```
 
 ### 证据管理
 
 ```bash
 # 添加来源
-echo '{"title":"论文标题","type":"webpage"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"title":"论文标题","type":"webpage"}' | kg node upsert --json-in - --dir <dir>
 
 # 查看来源
-bun run kg source get <id> --dir <dir>
+kg source get <id> --dir <dir>
 
 # 添加证据
-echo '{"sourceId":"src_xxx","text":"原文引用片段","kind":"Evidence"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"sourceId":"src_xxx","text":"原文引用片段","kind":"Evidence"}' | kg node upsert --json-in - --dir <dir>
 
 # 链接证据到 Claim
-bun run kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
+kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
 
 # 查看某个目标的所有证据
-bun run kg evidence list --target clm_1 --dir <dir>
+kg evidence list --target clm_1 --dir <dir>
 ```
 
 ### Claim 管理
 
 ```bash
 # 创建 Claim
-echo '{"text":"Gemma 4 31B 在 MMLU Pro 上达到 85.2%","status":"proposed","kind":"Claim"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"text":"Gemma 4 31B 在 MMLU Pro 上达到 85.2%","status":"proposed","kind":"Claim"}' | kg node upsert --json-in - --dir <dir>
 
 # 更新状态
-bun run kg claim set-status clm_1 supported --dir <dir>
+kg claim set-status clm_1 supported --dir <dir>
 
 # 查看冲突
-bun run kg claim conflicts clm_1 --dir <dir>
+kg claim conflicts clm_1 --dir <dir>
 ```
 
 ### Question / Hypothesis
 
 ```bash
 # 添加问题
-echo '{"text":"是否有第三方独立评测？","status":"open","kind":"Question"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"text":"是否有第三方独立评测？","status":"open","kind":"Question"}' | kg node upsert --json-in - --dir <dir>
 
 # 列出未解决问题
-bun run kg node list --kind Question --status open --dir <dir>
+kg node list --kind Question --status open --dir <dir>
 
 # 添加假设
-echo '{"text":"独立评测分数可能低于官方","status":"proposed","kind":"Hypothesis"}' | bun run kg node upsert --json-in - --dir <dir>
+echo '{"text":"独立评测分数可能低于官方","status":"proposed","kind":"Hypothesis"}' | kg node upsert --json-in - --dir <dir>
 ```
 
 ### 图谱查询
 
 ```bash
 # 邻居遍历（BFS）
-bun run kg graph neighbors ent_1 --depth 2 --dir <dir>
+kg graph neighbors ent_1 --depth 2 --dir <dir>
 
 # 子图提取
-bun run kg graph subgraph --focus ent_1 --depth 2 --dir <dir>
+kg graph subgraph --focus ent_1 --depth 2 --dir <dir>
 
 # 统计
-bun run kg graph stats --dir <dir>
+kg graph stats --dir <dir>
 
 # 图谱检查
-bun run kg graph lint --dir <dir>
+kg graph lint --dir <dir>
 ```
 
 ### 缺口检测
 
 ```bash
 # 自动检测知识缺口
-bun run kg gap detect --dir <dir>
+kg gap detect --dir <dir>
 
 # 查看已检测到的缺口
-bun run kg gap list --dir <dir>
+kg gap list --dir <dir>
 ```
 
 ### 图谱可视化
@@ -199,13 +210,13 @@ bun run kg gap list --dir <dir>
 
 ```bash
 # 导出完整图谱
-bun run kg graph export-html -o graph.html --dir <dir>
+kg graph export-html -o graph.html --dir <dir>
 
 # 导出指定节点的子图
-bun run kg graph export-html -o graph.html --focus ent_1 --depth 3 --dir <dir>
+kg graph export-html -o graph.html --focus ent_1 --depth 3 --dir <dir>
 
 # 导出指定任务的图谱
-bun run kg graph export-html -o graph.html --task task_1 --dir <dir>
+kg graph export-html -o graph.html --task task_1 --dir <dir>
 ```
 
 **功能特性：**
@@ -226,13 +237,13 @@ bun run kg graph export-html -o graph.html --task task_1 --dir <dir>
 
 ```bash
 # 生成 Markdown 报告
-bun run kg report generate --task task_1 --dir <dir>
+kg report generate --task task_1 --dir <dir>
 
 # 生成 JSON 格式报告
-bun run kg report generate --task task_1 --format json -o report.json --dir <dir>
+kg report generate --task task_1 --format json -o report.json --dir <dir>
 
 # 列出所有引用
-bun run kg report citations --dir <dir>
+kg report citations --dir <dir>
 ```
 
 ### LLM 任务编排
@@ -241,23 +252,23 @@ bun run kg report citations --dir <dir>
 
 ```bash
 # 从来源提取实体
-bun run kg llm extract-entities --source src_1 --dir <dir>
+kg llm extract-entities --source src_1 --dir <dir>
 
 # 从来源提取断言
-bun run kg llm extract-claims --source src_1 --dir <dir>
+kg llm extract-claims --source src_1 --dir <dir>
 
 # 生成新研究问题
-bun run kg llm generate-questions --dir <dir>
+kg llm generate-questions --dir <dir>
 
 # 生成下一轮搜索词
-bun run kg llm next-search-queries --dir <dir>
+kg llm next-search-queries --dir <dir>
 
 # 评估证据质量
-bun run kg llm assess-evidence --claim clm_1 --dir <dir>
+kg llm assess-evidence --claim clm_1 --dir <dir>
 
 # 实体/Claim 去重
-bun run kg llm normalize-entities --dir <dir>
-bun run kg llm normalize-claims --dir <dir>
+kg llm normalize-entities --dir <dir>
+kg llm normalize-claims --dir <dir>
 ```
 
 ## LLM 任务输出示例
