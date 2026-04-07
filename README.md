@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="./docs/banner.png" alt="Knowledge Graph CLI" width="100%">
+</div>
+
 # Knowledge Graph CLI (`kg`)
 
 [中文](./README.zh.md)
