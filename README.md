@@ -1,12 +1,48 @@
 <div align="center">
-  <img src="./docs/banner.png" alt="Knowledge Graph CLI" width="100%">
+  <img src="./docs/banner.png" alt="Agent Knowledge Graph CLI" width="100%">
 </div>
+
+<div align="center">
 
 # Agent Knowledge Graph CLI (`kg`)
 
-[中文](./README.zh.md)
+**Structured Long-Term Memory for AI Agents**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Bun](https://img.shields.io/badge/Runtime-Bun-000?logo=bun&logoColor=fff)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/Lang-TypeScript-3178C6?logo=typescript&logoColor=fff)](https://www.typescriptlang.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](./CONTRIBUTING.md)
+
+[中文](./README.zh.md) · [Report Bug](https://github.com/misakaikato/agent-knowledge-graph-cli/issues) · [Request Feature](https://github.com/misakaikato/agent-knowledge-graph-cli/issues)
+
+</div>
 
 A graph-driven iterative deep research tool. Designed for LLM/Agent invocation — the CLI handles only graph operations and task orchestration, never calling models directly.
+
+## Features at a Glance
+
+```
+ kg new-topic "AI Safety Research"
+        │
+        ▼
+ ┌─────────────────────────────────────────────┐
+ │               kg.json (Graph)               │
+ │                                             │
+ │  [Source] ──extract──▶ [Claim] ◀──supports── [Evidence]  │
+ │     │                    │                              │
+ │   relates_to         contested                        │
+ │     │                    │                              │
+ │     ▼                    ▼                              │
+ │  [Entity]           [Question] ◀──answers── [Gap]      │
+ └─────────────────────────────────────────────┘
+        │
+        ▼  (Agent loops until gaps are filled)
+ ┌─────────────────────────────────────────────┐
+ │  ✅ Evidence-backed research report          │
+ │  ✅ Verified claims with source traces       │
+ │  ✅ Identified knowledge gaps & questions    │
+ └─────────────────────────────────────────────┘
+```
 
 ## Why AI Agents Need `kg`
 
@@ -43,7 +79,13 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 ## Installation
 
 ```bash
+# Clone and install
+git clone https://github.com/misakaikato/agent-knowledge-graph-cli.git
+cd agent-knowledge-graph-cli
 bun install
+
+# Or use directly with bunx (no clone needed)
+bunx agent-knowledge-graph-cli --help
 ```
 
 ## Quick Start
@@ -237,6 +279,40 @@ temp/{topic}_{timestamp}/
 └── pages/           # Crawled page content (managed by upstream Agent)
 ```
 
+## Comparison with Other Approaches
+
+| | `kg` (This Tool) | RAG / Vector DB | Raw LLM Context | Knowledge Graph DB |
+|---|---|---|---|---|
+| **Structured relations** | ✅ Entities, Claims, Evidence | ❌ Flat chunks | ❌ Unstructured | ✅ Full graph |
+| **Evidence traceability** | ✅ Source → Evidence → Claim | ❌ Similarity only | ❌ None | ⚠️ Manual setup |
+| **Gap detection** | ✅ Built-in | ❌ | ❌ | ❌ |
+| **Agent-ready output** | ✅ LlmTaskEnvelope | ❌ | ❌ | ❌ |
+| **Zero infrastructure** | ✅ Single JSON file | ❌ Need vector DB | ✅ | ❌ Need graph DB |
+| **Model agnostic** | ✅ Any LLM | ✅ | ✅ | ✅ |
+
+## Roadmap
+
+- [ ] **Plugin system** — Custom node types and prompt templates via plugins
+- [ ] **MCP Server mode** — Expose `kg` as a Model Context Protocol server for direct Agent integration
+- [ ] **Multi-format export** — Markdown, PDF, LaTeX report generation
+- [ ] **Streaming LLM output** — Support streaming responses in LlmTaskEnvelope
+- [ ] **Graph visualization** — Interactive web-based graph viewer
+- [ ] **Collaborative research** — Merge multiple research directories
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for release history.
+
 ## Testing
 
 ```bash
@@ -246,4 +322,10 @@ bun test tests/e2e/   # E2E tests
 
 ## License
 
-MIT
+[MIT](./LICENSE) © misakaikato
+
+<div align="center">
+
+**[⬆ Back to Top](#agent-knowledge-graph-cli-kg)**
+
+</div>

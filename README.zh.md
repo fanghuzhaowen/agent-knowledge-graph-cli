@@ -1,12 +1,48 @@
 <div align="center">
-  <img src="./docs/banner.png" alt="Knowledge Graph CLI" width="100%">
+  <img src="./docs/banner.png" alt="Agent Knowledge Graph CLI" width="100%">
 </div>
+
+<div align="center">
 
 # Agent Knowledge Graph CLI (`kg`)
 
-[English](./README.md)
+**AI Agent 的结构化长期记忆**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Bun](https://img.shields.io/badge/Runtime-Bun-000?logo=bun&logoColor=fff)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/Lang-TypeScript-3178C6?logo=typescript&logoColor=fff)](https://www.typescriptlang.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](./CONTRIBUTING.md)
+
+[English](./README.md) · [报告 Bug](https://github.com/misakaikato/agent-knowledge-graph-cli/issues) · [功能建议](https://github.com/misakaikato/agent-knowledge-graph-cli/issues)
+
+</div>
 
 图谱驱动的迭代式深度调研工具。面向 LLM/Agent 调用设计，CLI 只做图谱操作与任务编排，不直接调用模型。
+
+## 一览
+
+```
+ kg new-topic "AI 安全调研"
+        │
+        ▼
+ ┌─────────────────────────────────────────────┐
+ │               kg.json (知识图谱)              │
+ │                                             │
+ │  [来源] ──提取──▶ [断言] ◀──支持── [证据]     │
+ │     │               │                       │
+ │   关联            争议                      │
+ │     │               │                       │
+ │     ▼               ▼                       │
+ │  [实体]          [问题] ◀──回答── [缺口]     │
+ └─────────────────────────────────────────────┘
+        │
+        ▼  (Agent 循环直至填补所有知识缺口)
+ ┌─────────────────────────────────────────────┐
+ │  ✅ 有据可依的研究报告                        │
+ │  ✅ 带溯源链的已验证断言                      │
+ │  ✅ 已识别的知识缺口与待答问题                 │
+ └─────────────────────────────────────────────┘
+```
 
 ## 为什么 AI Agent 需要 `kg`？
 
@@ -43,7 +79,13 @@
 ## 安装
 
 ```bash
+# 克隆并安装
+git clone https://github.com/misakaikato/agent-knowledge-graph-cli.git
+cd agent-knowledge-graph-cli
 bun install
+
+# 或通过 bunx 直接使用（无需克隆）
+bunx agent-knowledge-graph-cli --help
 ```
 
 ## 快速开始
@@ -237,6 +279,40 @@ temp/{topic}_{timestamp}/
 └── pages/           # 抓取页面全文（由上层 Agent 管理）
 ```
 
+## 与其他方案对比
+
+| | `kg`（本工具） | RAG / 向量数据库 | 纯 LLM 上下文 | 知识图谱数据库 |
+|---|---|---|---|---|
+| **结构化关系** | ✅ 实体、断言、证据 | ❌ 扁平分块 | ❌ 非结构化 | ✅ 完整图谱 |
+| **证据可溯源** | ✅ 来源→证据→断言 | ❌ 仅相似度 | ❌ 无 | ⚠️ 需手动配置 |
+| **缺口检测** | ✅ 内置 | ❌ | ❌ | ❌ |
+| **Agent 就绪** | ✅ LlmTaskEnvelope | ❌ | ❌ | ❌ |
+| **零基础设施** | ✅ 单个 JSON 文件 | ❌ 需向量数据库 | ✅ | ❌ 需图数据库 |
+| **模型无关** | ✅ 任意 LLM | ✅ | ✅ | ✅ |
+
+## 路线图
+
+- [ ] **插件系统** — 通过插件支持自定义节点类型和 prompt 模板
+- [ ] **MCP Server 模式** — 作为 Model Context Protocol 服务器暴露，支持 Agent 直接集成
+- [ ] **多格式导出** — Markdown、PDF、LaTeX 报告生成
+- [ ] **流式 LLM 输出** — LlmTaskEnvelope 支持流式响应
+- [ ] **图谱可视化** — 交互式 Web 图谱浏览器
+- [ ] **协作调研** — 合并多个研究目录
+
+## 贡献指南
+
+欢迎贡献！请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md) 了解详情。
+
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交改动 (`git commit -m 'feat: add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 发起 Pull Request
+
+## 更新日志
+
+查看 [CHANGELOG.md](./CHANGELOG.md) 了解版本历史。
+
 ## 测试
 
 ```bash
@@ -246,4 +322,10 @@ bun test tests/e2e/   # E2E 测试
 
 ## License
 
-MIT
+[MIT](./LICENSE) © misakaikato
+
+<div align="center">
+
+**[⬆ 回到顶部](#agent-knowledge-graph-cli-kg)**
+
+</div>
