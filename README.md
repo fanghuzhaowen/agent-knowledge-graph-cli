@@ -87,7 +87,6 @@ bun install
 # Build and link globally so you can use `kg` directly
 bun run build
 bun link
-bun link
 ```
 
 After linking, all commands can be run with just `kg` instead of `bun run kg`:

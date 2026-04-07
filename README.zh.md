@@ -87,7 +87,6 @@ bun install
 # 构建并全局链接，之后可直接使用 `kg` 命令
 bun run build
 bun link
-bun link
 ```
 
 链接后，所有命令可以直接用 `kg` 开头，无需再输入 `bun run`：
