@@ -193,6 +193,48 @@ bun run kg gap detect --dir <dir>
 bun run kg gap list --dir <dir>
 ```
 
+### Graph Visualization
+
+Export the knowledge graph as a single interactive HTML file with D3.js force-directed layout.
+
+```bash
+# Export full graph
+bun run kg graph export-html -o graph.html --dir <dir>
+
+# Export subgraph from a focus node
+bun run kg graph export-html -o graph.html --focus ent_1 --depth 3 --dir <dir>
+
+# Export graph for a specific task
+bun run kg graph export-html -o graph.html --task task_1 --dir <dir>
+```
+
+**Features:**
+
+- Force-directed layout with drag & zoom
+- Color-coded nodes by kind (Entity, Claim, Source, Evidence, etc.)
+- Color-coded borders by status (supported, contested, open, etc.)
+- Click any node to inspect details in sidebar
+- Search nodes by title or text
+- Export as SVG
+- Built-in stats panel and legend
+
+<div align="center">
+  <img src="./docs/demo-graph-screenshot.png" alt="Graph Visualization Demo" width="90%">
+</div>
+
+### Report Generation
+
+```bash
+# Generate markdown report
+bun run kg report generate --task task_1 --dir <dir>
+
+# Generate JSON report
+bun run kg report generate --task task_1 --format json -o report.json --dir <dir>
+
+# List all citations
+bun run kg report citations --dir <dir>
+```
+
 ### LLM Task Orchestration
 
 All `llm` commands do not call models directly. They output JSON-formatted `LlmTaskEnvelope` objects (containing context, instructions, recommended prompts, and output schemas) for the upstream agent to execute.

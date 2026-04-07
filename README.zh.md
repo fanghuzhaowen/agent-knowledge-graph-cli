@@ -193,6 +193,48 @@ bun run kg gap detect --dir <dir>
 bun run kg gap list --dir <dir>
 ```
 
+### 图谱可视化
+
+将知识图谱导出为单个交互式 HTML 文件，内置 D3.js 力导向布局。
+
+```bash
+# 导出完整图谱
+bun run kg graph export-html -o graph.html --dir <dir>
+
+# 导出指定节点的子图
+bun run kg graph export-html -o graph.html --focus ent_1 --depth 3 --dir <dir>
+
+# 导出指定任务的图谱
+bun run kg graph export-html -o graph.html --task task_1 --dir <dir>
+```
+
+**功能特性：**
+
+- 力导向布局，支持拖拽和缩放
+- 节点按类型着色（实体、断言、来源、证据等）
+- 节点边框按状态着色（已支持、争议中、待解决等）
+- 点击节点查看详细信息侧边栏
+- 按标题或内容搜索节点
+- 导出为 SVG
+- 内置统计面板和图例
+
+<div align="center">
+  <img src="./docs/demo-graph-screenshot.png" alt="图谱可视化示例" width="90%">
+</div>
+
+### 报告生成
+
+```bash
+# 生成 Markdown 报告
+bun run kg report generate --task task_1 --dir <dir>
+
+# 生成 JSON 格式报告
+bun run kg report generate --task task_1 --format json -o report.json --dir <dir>
+
+# 列出所有引用
+bun run kg report citations --dir <dir>
+```
+
 ### LLM 任务编排
 
 所有 `llm` 命令不直接调用模型，只输出 JSON 格式的 `LlmTaskEnvelope`（含上下文、指令、推荐 prompt、输出 schema），由上层 Agent 执行。

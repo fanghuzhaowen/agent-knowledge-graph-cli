@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Graph Visualization</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+#container { width: 100vw; height: 100vh; position: relative; }
+svg { width: 100%; height: 100%; }
+#sidebar { position: fixed; right: 0; top: 0; width: 360px; height: 100vh; background: #16213e; border-left: 1px solid #2a3a5e; transform: translateX(100%); transition: transform 0.3s ease; z-index: 100; overflow-y: auto; padding: 20px; }
+#sidebar.open { transform: translateX(0); }
+#sidebar h2 { font-size: 16px; color: #64b5f6; margin-bottom: 12px; word-break: break-all; }
+#sidebar .field { margin-bottom: 10px; }
+#sidebar .field-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+#sidebar .field-value { font-size: 14px; color: #e0e0e0; margin-top: 2px; word-break: break-all; }
+#sidebar .close-btn { position: absolute; top: 12px; right: 12px; background: none; border: none; color: #888; font-size: 20px; cursor: pointer; }
+#sidebar .close-btn:hover { color: #fff; }
+#legend { position: fixed; left: 16px; bottom: 16px; background: #16213e; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px 16px; z-index: 50; }
+#legend h3 { font-size: 12px; color: #888; margin-bottom: 8px; }
+#legend .item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; }
+#legend .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+#stats { position: fixed; left: 16px; top: 16px; background: #16213e; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px 16px; z-index: 50; }
+#stats h3 { font-size: 12px; color: #888; margin-bottom: 6px; }
+#stats .stat { font-size: 13px; margin-bottom: 2px; }
+#stats .stat span { color: #64b5f6; }
+#controls { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 8px; z-index: 50; }
+#controls button { background: #16213e; border: 1px solid #2a3a5e; color: #e0e0e0; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+#controls button:hover { background: #2a3a5e; }
+#search { position: fixed; left: 16px; top: 70px; z-index: 50; }
+#search input { background: #16213e; border: 1px solid #2a3a5e; color: #e0e0e0; padding: 8px 12px; border-radius: 6px; width: 240px; font-size: 13px; outline: none; }
+#search input::placeholder { color: #666; }
+#search input:focus { border-color: #64b5f6; }
+.edge-label { font-size: 10px; fill: #888; pointer-events: none; }
+.node-tooltip { pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="container">
+<svg id="graph"></svg>
+</div>
+<div id="sidebar">
+<button class="close-btn" onclick="closeSidebar()">&times;</button>
+<h2 id="sidebar-title"></h2>
+<div id="sidebar-content"></div>
+</div>
+<div id="legend">
+<h3>节点类型</h3>
+<div class="item"><div class="dot" style="background:#4CAF50"></div>实体</div>
+<div class="item"><div class="dot" style="background:#2196F3"></div>断言</div>
+<div class="item"><div class="dot" style="background:#FF9800"></div>来源</div>
+<div class="item"><div class="dot" style="background:#9C27B0"></div>证据</div>
+<div class="item"><div class="dot" style="background:#795548"></div>观察</div>
+<div class="item"><div class="dot" style="background:#F44336"></div>问题</div>
+<div class="item"><div class="dot" style="background:#00BCD4"></div>假设</div>
+<div class="item"><div class="dot" style="background:#E91E63"></div>缺口</div>
+<div class="item"><div class="dot" style="background:#607D8B"></div>任务</div>
+<div class="item"><div class="dot" style="background:#8BC34A"></div>数值</div>
+</div>
+<div id="stats">
+<h3>图谱统计</h3>
+<div id="stats-content"></div>
+</div>
+<div id="search">
+<input type="text" id="search-input" placeholder="搜索节点..." oninput="handleSearch(this.value)">
+</div>
+<div id="controls">
+<button onclick="resetZoom()">重置视图</button>
+<button onclick="toggleLabels()">标签开关</button>
+<button onclick="exportSvg()">导出 SVG</button>
+</div>
+<script>
+const GRAPH_DATA = {"nodes":[{"id":"src_3fe355e7_mnos7jvz","kind":"Source","type":"webpage","title":"LangChain Docs","attrs":{"uri":"https://docs.langchain.com"}},{"id":"ent_cb7d825b_mnos7jww","kind":"Entity","type":"framework","title":"ReAct","attrs":{}},{"id":"ent_596798eb_mnos7jxr","kind":"Entity","type":"framework","title":"LangChain","attrs":{}},{"id":"ent_634796f1_mnos7jyp","kind":"Entity","type":"framework","title":"CrewAI","attrs":{}},{"id":"ent_c9dbea7d_mnos7jzj","kind":"Entity","type":"organization","title":"OpenAI","attrs":{}},{"id":"ent_4e794324_mnos7k0f","kind":"Entity","type":"organization","title":"Anthropic","attrs":{}},{"id":"ent_f47c82a8_mnos7k19","kind":"Entity","type":"concept","title":"Tool Use","attrs":{}},{"id":"clm_83661817_mnos7k2v","kind":"Claim","text":"ReAct achieves state-of-the-art performance on multi-step reasoning benchmarks","status":"supported","attrs":{"claimType":"performance","confidence":0.85}},{"id":"clm_c66d63a6_mnos7k3p","kind":"Claim","text":"LangChain is the most popular Agent framework by GitHub stars","status":"proposed","attrs":{"claimType":"popularity","confidence":0.7}},{"id":"clm_eaddd40e_mnos7k4j","kind":"Claim","text":"Tool use capability scales with model size","status":"weakly_supported","attrs":{"claimType":"scaling","confidence":0.6}},{"id":"ev_a02a100c_mnos7k5h","kind":"Evidence","text":"ReAct outperforms baseline methods by 8% on HotpotQA","attrs":{"sourceId":"src_1"}},{"id":"q_15957d8d_mnos7k6g","kind":"Question","text":"How do multi-agent frameworks compare in production reliability?","status":"open","attrs":{"priority":0.8}},{"id":"hyp_c9c45986_mnos7k7g","kind":"Hypothesis","text":"Specialized agent frameworks outperform general-purpose ones in domain-specific tasks","status":"proposed","attrs":{}},{"id":"gap_da8ff581_mnos7k8g","kind":"Gap","text":"No systematic comparison of agent frameworks in production environments","status":"open","attrs":{"gapType":"missing_evidence","severity":0.9}},{"id":"ent_e99292b5_mnos7wgq","kind":"Entity","type":"concept","title":"Chain-of-Thought","attrs":{}},{"id":"src_a7bf15ee_mnos7wht","kind":"Source","type":"pdf","title":"ReAct Paper","attrs":{"uri":"https://arxiv.org/abs/2210.03629","author":"Yao et al."}},{"id":"src_2d4b584e_mnos7wiw","kind":"Source","type":"pdf","title":"Toolformer Paper","attrs":{"uri":"https://arxiv.org/abs/2302.04761","author":"Schick et al."}},{"id":"ent_01a560d4_mnosa6c3","kind":"Entity","type":"framework","title":"AutoGPT","attrs":{}},{"id":"ent_7d62567d_mnosa6d5","kind":"Entity","type":"framework","title":"BabyAGI","attrs":{}},{"id":"ent_e9164195_mnosa6e4","kind":"Entity","type":"framework","title":"MetaGPT","attrs":{}},{"id":"ent_16997ad7_mnosa6f3","kind":"Entity","type":"organization","title":"Google","attrs":{}},{"id":"ent_43fa0796_mnosa6g1","kind":"Entity","type":"organization","title":"Meta","attrs":{}},{"id":"ent_7a28550e_mnosa6gy","kind":"Entity","type":"organization","title":"Microsoft","attrs":{}},{"id":"ent_8a9721c0_mnosa6hu","kind":"Entity","type":"model","title":"GPT-4","attrs":{}},{"id":"ent_8ddd3650_mnosa6iq","kind":"Entity","type":"model","title":"Claude","attrs":{}},{"id":"ent_ae231a98_mnosa6jq","kind":"Entity","type":"model","title":"Gemini","attrs":{}},{"id":"ent_1d82f98f_mnosa6kp","kind":"Entity","type":"model","title":"Llama 3","attrs":{}},{"id":"ent_80ba4346_mnosa6lo","kind":"Entity","type":"concept","title":"Planning","attrs":{}},{"id":"ent_b102b484_mnosa6mp","kind":"Entity","type":"concept","title":"Memory System","attrs":{}},{"id":"ent_2243a6a9_mnosa6np","kind":"Entity","type":"concept","title":"Multi-Agent Collaboration","attrs":{}},{"id":"ent_f78074c8_mnosa6oq","kind":"Entity","type":"concept","title":"RAG","attrs":{}},{"id":"src_36a97018_mnosa6pr","kind":"Source","type":"repo","title":"AutoGPT GitHub Repo","attrs":{"uri":"https://github.com/Significant-Gravitas/AutoGPT"}},{"id":"src_a3b18fe7_mnosa6qu","kind":"Source","type":"webpage","title":"CrewAI Documentation","attrs":{"uri":"https://docs.crewai.com"}},{"id":"src_29bc368f_mnosa6ru","kind":"Source","type":"pdf","title":"AgentBench Paper","attrs":{"uri":"https://arxiv.org/abs/2308.03688"}},{"id":"clm_a344ba0f_mnosa6sv","kind":"Claim","text":"Multi-agent systems show 40% improvement over single-agent on complex tasks","status":"weakly_supported","attrs":{"claimType":"performance","confidence":0.65}},{"id":"clm_c8bc1271_mnosa6tu","kind":"Claim","text":"RAG reduces hallucination rates by up to 50%","status":"supported","attrs":{"claimType":"reliability","confidence":0.8}},{"id":"clm_3bc0fc54_mnosa6uu","kind":"Claim","text":"GPT-4 outperforms Claude on tool-use tasks","status":"contested","attrs":{"claimType":"comparison","confidence":0.4}},{"id":"clm_73f1a3be_mnosa6vt","kind":"Claim","text":"Open-source LLMs can match proprietary models on specific agent tasks","status":"proposed","attrs":{"claimType":"parity","confidence":0.55}},{"id":"ev_f88be4b4_mnosa6wr","kind":"Evidence","text":"AgentBench evaluates 8 different agent tasks across 4 environments","attrs":{"sourceId":"src_a7bf15ee_mnos7wht"}},{"id":"ev_fa60da92_mnosa6xp","kind":"Evidence","text":"RAG with retrieval achieves 92% factual accuracy vs 67% without","attrs":{"sourceId":"src_3fe355e7_mnos7jvz"}},{"id":"q_5849f3c1_mnosa6yn","kind":"Question","text":"What is the optimal agent architecture for long-horizon tasks?","status":"open","attrs":{"priority":0.9}},{"id":"q_9540c88f_mnosa6zl","kind":"Question","text":"Can agent frameworks work reliably with open-source models?","status":"open","attrs":{"priority":0.75}},{"id":"gap_8ada4a9a_mnosa70k","kind":"Gap","text":"No standardized benchmark for agent planning capabilities","status":"open","attrs":{"gapType":"missing_framework","severity":0.85}},{"id":"gap_dbc3a6b1_mnosa71i","kind":"Gap","text":"Insufficient data on agent failure modes in production","status":"open","attrs":{"gapType":"missing_evidence","severity":0.95}}],"edges":[{"id":"e_bb1db967_mnos7wju","source":"ent_cb7d825b_mnos7jww","target":"ent_c9dbea7d_mnos7jzj","type":"developed_by","label":"developed_by"},{"id":"e_45494b4b_mnos7wkq","source":"ent_596798eb_mnos7jxr","target":"ent_cb7d825b_mnos7jww","type":"alternative_to","label":"alternative_to"},{"id":"e_3a6fcd57_mnos7wln","source":"ent_634796f1_mnos7jyp","target":"ent_596798eb_mnos7jxr","type":"competes_with","label":"competes_with"},{"id":"e_02947a86_mnos7wmi","source":"ent_cb7d825b_mnos7jww","target":"ent_f47c82a8_mnos7k19","type":"uses","label":"uses"},{"id":"e_604024de_mnos7wne","source":"clm_83661817_mnos7k2v","target":"ev_a02a100c_mnos7k5h","type":"supported_by","label":"supported_by"},{"id":"e_d582a2e1_mnosapsz","source":"ent_c9dbea7d_mnos7jzj","target":"ent_8a9721c0_mnosa6hu","type":"develops","label":"develops"},{"id":"e_b6ae1c71_mnosaptu","source":"ent_4e794324_mnos7k0f","target":"ent_8ddd3650_mnosa6iq","type":"develops","label":"develops"},{"id":"e_d797bb71_mnosapup","source":"ent_16997ad7_mnosa6f3","target":"ent_ae231a98_mnosa6jq","type":"develops","label":"develops"},{"id":"e_cb810a2c_mnosapvl","source":"ent_43fa0796_mnosa6g1","target":"ent_1d82f98f_mnosa6kp","type":"develops","label":"develops"},{"id":"e_b3b2ce83_mnosapwh","source":"ent_596798eb_mnos7jxr","target":"ent_8a9721c0_mnosa6hu","type":"supports_model","label":"supports_model"},{"id":"e_e74fb3ce_mnosapxb","source":"ent_596798eb_mnos7jxr","target":"ent_8ddd3650_mnosa6iq","type":"supports_model","label":"supports_model"},{"id":"e_80f98766_mnosapy6","source":"ent_634796f1_mnos7jyp","target":"ent_8a9721c0_mnosa6hu","type":"supports_model","label":"supports_model"},{"id":"e_a28ce822_mnosapz1","source":"ent_01a560d4_mnosa6c3","target":"ent_8a9721c0_mnosa6hu","type":"supports_model","label":"supports_model"},{"id":"e_fc67fbb6_mnosapzw","source":"ent_596798eb_mnos7jxr","target":"ent_80ba4346_mnosa6lo","type":"implements","label":"implements"},{"id":"e_4138f57b_mnosaq0r","source":"ent_596798eb_mnos7jxr","target":"ent_b102b484_mnosa6mp","type":"implements","label":"implements"},{"id":"e_b9b0929b_mnosaq1l","source":"ent_e9164195_mnosa6e4","target":"ent_2243a6a9_mnosa6np","type":"implements","label":"implements"},{"id":"e_61d160d1_mnosaq2g","source":"ent_cb7d825b_mnos7jww","target":"ent_e99292b5_mnos7wgq","type":"uses","label":"uses"},{"id":"e_3a196a4f_mnosaq3b","source":"ent_7d62567d_mnosa6d5","target":"ent_80ba4346_mnosa6lo","type":"implements","label":"implements"},{"id":"e_ba419bb0_mnosaq46","source":"clm_3bc0fc54_mnosa6uu","target":"ent_8a9721c0_mnosa6hu","type":"compares","label":"compares"},{"id":"e_ac8fe3fe_mnosaq51","source":"clm_3bc0fc54_mnosa6uu","target":"ent_8ddd3650_mnosa6iq","type":"compares","label":"compares"},{"id":"e_1487d63f_mnosaq5w","source":"clm_73f1a3be_mnosa6vt","target":"ent_1d82f98f_mnosa6kp","type":"about","label":"about"},{"id":"e_18bb5395_mnosaq6r","source":"clm_a344ba0f_mnosa6sv","target":"ent_2243a6a9_mnosa6np","type":"about","label":"about"},{"id":"e_a4f7d7c1_mnosaq7l","source":"clm_c8bc1271_mnosa6tu","target":"ent_f78074c8_mnosa6oq","type":"about","label":"about"},{"id":"e_6dc45d1d_mnosaq8g","source":"ent_01a560d4_mnosa6c3","target":"ent_634796f1_mnos7jyp","type":"competes_with","label":"competes_with"},{"id":"e_d8c780bc_mnosaq9b","source":"ent_e9164195_mnosa6e4","target":"ent_634796f1_mnos7jyp","type":"competes_with","label":"competes_with"},{"id":"e_6e4e88ab_mnosaqa6","source":"ent_7a28550e_mnosa6gy","target":"ent_c9dbea7d_mnos7jzj","type":"partners_with","label":"partners_with"}]};
+
+const kindColors = {"Entity":"#4CAF50","Claim":"#2196F3","Source":"#FF9800","Evidence":"#9C27B0","Observation":"#795548","Question":"#F44336","Hypothesis":"#00BCD4","Gap":"#E91E63","Task":"#607D8B","Value":"#8BC34A"};
+const statusColors = {"proposed":"#90CAF9","supported":"#66BB6A","weakly_supported":"#AED581","contested":"#FFB74D","contradicted":"#EF5350","deprecated":"#BDBDBD","superseded":"#CE93D8","open":"#EF9A9A","in_progress":"#FFE082","resolved":"#A5D6A7","blocked":"#FFAB91","obsolete":"#BDBDBD","unresolved":"#FFCC80"};
+const kindLabels = {"Entity":"实体","Claim":"断言","Source":"来源","Evidence":"证据","Observation":"观察","Question":"问题","Hypothesis":"假设","Gap":"缺口","Task":"任务","Value":"数值"};
+
+let showLabels = true;
+let simulation, svg, g, linkGroup, nodeGroup, labelGroup;
+
+function init() {
+	const width = window.innerWidth;
+	const height = window.innerHeight;
+
+	svg = d3.select("#graph");
+	svg.attr("viewBox", [0, 0, width, height]);
+
+	g = svg.append("g");
+
+	// Zoom
+	const zoom = d3.zoom()
+		.scaleExtent([0.1, 8])
+		.on("zoom", (event) => g.attr("transform", event.transform));
+	svg.call(zoom);
+
+	// Build index
+	const nodeMap = {};
+	GRAPH_DATA.nodes.forEach(n => nodeMap[n.id] = n);
+
+	// Stats
+	const kindCounts = {};
+	GRAPH_DATA.nodes.forEach(n => { kindCounts[n.kind] = (kindCounts[n.kind] || 0) + 1; });
+	let statsHtml = '<div class="stat">节点: <span>' + GRAPH_DATA.nodes.length + '</span></div>';
+	statsHtml += '<div class="stat">边: <span>' + GRAPH_DATA.edges.length + '</span></div>';
+	for (const [k, v] of Object.entries(kindCounts)) {
+		statsHtml += '<div class="stat">' + (kindLabels[k] || k) + ': <span>' + v + '</span></div>';
+	}
+	document.getElementById("stats-content").innerHTML = statsHtml;
+
+	// Force simulation
+	simulation = d3.forceSimulation(GRAPH_DATA.nodes)
+		.force("link", d3.forceLink(GRAPH_DATA.edges).id(d => d.id).distance(100).strength(0.5))
+		.force("charge", d3.forceManyBody().strength(-300))
+		.force("center", d3.forceCenter(width / 2, height / 2))
+		.force("collision", d3.forceCollide().radius(30));
+
+	// Edges
+	linkGroup = g.append("g").attr("class", "links");
+	const link = linkGroup.selectAll("line")
+		.data(GRAPH_DATA.edges)
+		.enter().append("line")
+		.attr("stroke", "#444")
+		.attr("stroke-width", 1.5)
+		.attr("stroke-opacity", 0.6)
+		.on("click", (event, d) => showEdgeDetail(d));
+
+	// Edge labels
+	labelGroup = g.append("g").attr("class", "labels");
+	const edgeLabels = labelGroup.selectAll("text")
+		.data(GRAPH_DATA.edges)
+		.enter().append("text")
+		.attr("class", "edge-label")
+		.attr("text-anchor", "middle")
+		.text(d => d.type);
+
+	// Node groups
+	nodeGroup = g.append("g").attr("class", "nodes");
+	const node = nodeGroup.selectAll("g")
+		.data(GRAPH_DATA.nodes)
+		.enter().append("g")
+		.attr("cursor", "pointer")
+		.call(d3.drag()
+			.on("start", dragStarted)
+			.on("drag", dragged)
+			.on("end", dragEnded))
+		.on("click", (event, d) => { event.stopPropagation(); showNodeDetail(d); });
+
+	// Node circles
+	node.append("circle")
+		.attr("r", d => d.kind === "Task" ? 8 : (d.kind === "Claim" || d.kind === "Question" ? 10 : 7))
+		.attr("fill", d => kindColors[d.kind] || "#666")
+		.attr("stroke", d => {
+			if (d.status && statusColors[d.status]) return statusColors[d.status];
+			return "#333";
+		})
+		.attr("stroke-width", 2.5)
+		.attr("opacity", 0.9);
+
+	// Node labels
+	node.append("text")
+		.attr("dy", -14)
+		.attr("text-anchor", "middle")
+		.attr("fill", "#ccc")
+		.attr("font-size", "11px")
+		.text(d => truncate(d.title || d.text || d.id, 20));
+
+	// Tick
+	simulation.on("tick", () => {
+		link
+			.attr("x1", d => d.source.x)
+			.attr("y1", d => d.source.y)
+			.attr("x2", d => d.target.x)
+			.attr("y2", d => d.target.y);
+		edgeLabels
+			.attr("x", d => (d.source.x + d.target.x) / 2)
+			.attr("y", d => (d.source.y + d.target.y) / 2 - 4);
+		node.attr("transform", d => "translate(" + d.x + "," + d.y + ")");
+	});
+
+	// Click background to close sidebar
+	svg.on("click", () => closeSidebar());
+}
+
+function truncate(str, len) { return str.length > len ? str.slice(0, len) + "..." : str; }
+
+function dragStarted(event, d) { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+function dragEnded(event, d) { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
+
+function showNodeDetail(d) {
+	const sidebar = document.getElementById("sidebar");
+	document.getElementById("sidebar-title").textContent = d.title || d.text || d.id;
+	let html = '';
+	html += field("ID", d.id);
+	html += field("类型", (kindLabels[d.kind] || d.kind) + (d.type ? " (" + d.type + ")" : ""));
+	html += field("状态", d.status || "-");
+	html += field("置信度", d.confidence != null ? d.confidence.toFixed(2) : "-");
+	if (d.text) html += field("内容", d.text);
+	if (d.summary) html += field("摘要", d.summary);
+	if (d.attrs) {
+		for (const [k, v] of Object.entries(d.attrs)) {
+			if (v != null && v !== "" && k !== "taskId" && k !== "taskIds") {
+				html += field(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+			}
+		}
+	}
+	// Show connected edges
+	const connected = GRAPH_DATA.edges.filter(e => e.source.id === d.id || e.target.id === d.id);
+	if (connected.length > 0) {
+		html += '<div class="field" style="margin-top:12px"><div class="field-label">关系 (' + connected.length + ')</div></div>';
+		connected.forEach(e => {
+			const other = e.source.id === d.id ? e.target : e.source;
+			html += '<div class="field"><div class="field-value" style="color:#888;font-size:12px">' + e.type + ' → ' + truncate(other.title || other.text || other.id, 30) + '</div></div>';
+		});
+	}
+	document.getElementById("sidebar-content").innerHTML = html;
+	sidebar.classList.add("open");
+}
+
+function showEdgeDetail(d) {
+	const sidebar = document.getElementById("sidebar");
+	document.getElementById("sidebar-title").textContent = "边: " + d.type;
+	let html = '';
+	html += field("ID", d.id);
+	html += field("类型", d.type);
+	html += field("源节点", (d.source.title || d.source.id));
+	html += field("目标节点", (d.target.title || d.target.id));
+	html += field("置信度", d.confidence != null ? d.confidence.toFixed(2) : "-");
+	document.getElementById("sidebar-content").innerHTML = html;
+	sidebar.classList.add("open");
+}
+
+function field(label, value) {
+	return '<div class="field"><div class="field-label">' + label + '</div><div class="field-value">' + value + '</div></div>';
+}
+
+function closeSidebar() { document.getElementById("sidebar").classList.remove("open"); }
+
+function resetZoom() {
+	svg.transition().duration(500).call(d3.zoom().transform, d3.zoomIdentity);
+}
+
+function toggleLabels() {
+	showLabels = !showLabels;
+	g.selectAll(".edge-label").attr("opacity", showLabels ? 1 : 0);
+	g.selectAll(".nodes text").attr("opacity", showLabels ? 1 : 0);
+}
+
+function exportSvg() {
+	const svgEl = document.querySelector("svg");
+	const serializer = new XMLSerializer();
+	const svgStr = serializer.serializeToString(svgEl);
+	const blob = new Blob([svgStr], { type: "image/svg+xml" });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement("a");
+	a.href = url; a.download = "knowledge-graph.svg"; a.click();
+	URL.revokeObjectURL(url);
+}
+
+let searchHighlight = null;
+function handleSearch(query) {
+	if (searchHighlight) { searchHighlight.remove(); searchHighlight = null; }
+	if (!query.trim()) return;
+	const q = query.toLowerCase();
+	const matches = nodeGroup.selectAll("g").filter(d =>
+		(d.title || "").toLowerCase().includes(q) ||
+		(d.text || "").toLowerCase().includes(q) ||
+		(d.id || "").toLowerCase().includes(q)
+	);
+	if (!matches.empty()) {
+		searchHighlight = matches.append("circle")
+			.attr("r", 20)
+			.attr("fill", "none")
+			.attr("stroke", "#FFD700")
+			.attr("stroke-width", 3)
+			.attr("stroke-dasharray", "4,2");
+		const d = matches.datum();
+		if (d.x && d.y) {
+			svg.transition().duration(500).call(
+				d3.zoom().transform,
+				d3.zoomIdentity.translate(window.innerWidth/2 - d.x, window.innerHeight/2 - d.y)
+			);
+		}
+	}
+}
+</script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+if (typeof d3 !== "undefined") { init(); } else {
+	document.body.innerHTML = '<div style="color:#fff;padding:40px;text-align:center"><h2>加载 D3.js 失败</h2><p>请检查网络连接，D3 从 CDN 加载</p></div>';
+}
+</script>
+</body>
+</html>
