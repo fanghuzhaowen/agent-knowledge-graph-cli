@@ -292,12 +292,7 @@ temp/{topic}_{timestamp}/
 
 ## 路线图
 
-- [ ] **插件系统** — 通过插件支持自定义节点类型和 prompt 模板
-- [ ] **MCP Server 模式** — 作为 Model Context Protocol 服务器暴露，支持 Agent 直接集成
-- [ ] **多格式导出** — Markdown、PDF、LaTeX 报告生成
-- [ ] **流式 LLM 输出** — LlmTaskEnvelope 支持流式响应
-- [ ] **图谱可视化** — 交互式 Web 图谱浏览器
-- [ ] **协作调研** — 合并多个研究目录
+> 还没想好。。。 🤔
 
 ## 贡献指南
 

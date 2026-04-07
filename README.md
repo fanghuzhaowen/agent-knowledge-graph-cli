@@ -292,12 +292,7 @@ temp/{topic}_{timestamp}/
 
 ## Roadmap
 
-- [ ] **Plugin system** — Custom node types and prompt templates via plugins
-- [ ] **MCP Server mode** — Expose `kg` as a Model Context Protocol server for direct Agent integration
-- [ ] **Multi-format export** — Markdown, PDF, LaTeX report generation
-- [ ] **Streaming LLM output** — Support streaming responses in LlmTaskEnvelope
-- [ ] **Graph visualization** — Interactive web-based graph viewer
-- [ ] **Collaborative research** — Merge multiple research directories
+> Thinking... 🤔
 
 ## Contributing
 
