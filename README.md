@@ -13,7 +13,7 @@
 [![TypeScript](https://img.shields.io/badge/Lang-TypeScript-3178C6?logo=typescript&logoColor=fff)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-[中文](./README.zh.md) · [Report Bug](https://github.com/misakaikato/agent-knowledge-graph-cli/issues) · [Request Feature](https://github.com/misakaikato/agent-knowledge-graph-cli/issues)
+[中文](./README.zh.md) · [Report Bug](https://github.com/fanghuzhaowen/agent-knowledge-graph-cli/issues) · [Request Feature](https://github.com/fanghuzhaowen/agent-knowledge-graph-cli/issues)
 
 </div>
 
@@ -80,7 +80,7 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 
 ```bash
 # Clone and install
-git clone https://github.com/misakaikato/agent-knowledge-graph-cli.git
+git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
 ```

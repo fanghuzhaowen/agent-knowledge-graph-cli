@@ -13,7 +13,7 @@
 [![TypeScript](https://img.shields.io/badge/Lang-TypeScript-3178C6?logo=typescript&logoColor=fff)](https://www.typescriptlang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-[English](./README.md) · [报告 Bug](https://github.com/misakaikato/agent-knowledge-graph-cli/issues) · [功能建议](https://github.com/misakaikato/agent-knowledge-graph-cli/issues)
+[English](./README.md) · [报告 Bug](https://github.com/fanghuzhaowen/agent-knowledge-graph-cli/issues) · [功能建议](https://github.com/fanghuzhaowen/agent-knowledge-graph-cli/issues)
 
 </div>
 
@@ -80,7 +80,7 @@
 
 ```bash
 # 克隆并安装
-git clone https://github.com/misakaikato/agent-knowledge-graph-cli.git
+git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
 ```

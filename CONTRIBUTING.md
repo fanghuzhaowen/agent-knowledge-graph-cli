@@ -6,7 +6,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 
 ```bash
 # Clone the repository
-git clone https://github.com/misakaikato/agent-knowledge-graph-cli.git
+git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 
 # Install dependencies
@@ -80,4 +80,4 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Questions?
 
-Feel free to open an [issue](https://github.com/misakaikato/agent-knowledge-graph-cli/issues) for any questions or discussions.
+Feel free to open an [issue](https://github.com/fanghuzhaowen/agent-knowledge-graph-cli/issues) for any questions or discussions.
