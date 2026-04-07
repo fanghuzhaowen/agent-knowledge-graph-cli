@@ -84,7 +84,9 @@ git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
 
-# 全局链接，之后可直接使用 `kg` 命令
+# 构建并全局链接，之后可直接使用 `kg` 命令
+bun run build
+bun link
 bun link
 ```
 

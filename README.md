@@ -84,7 +84,9 @@ git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
 
-# Link globally so you can use `kg` directly
+# Build and link globally so you can use `kg` directly
+bun run build
+bun link
 bun link
 ```
 
