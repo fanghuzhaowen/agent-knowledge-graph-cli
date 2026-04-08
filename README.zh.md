@@ -53,8 +53,8 @@
 - **图谱即记忆** — Agent 不再依赖滑动窗口或向量检索，而是通过实体、断言、证据、问题的语义关系网络来存取和推理知识
 - **零模型耦合** — CLI 不调用任何 LLM API，只输出标准化的 `LlmTaskEnvelope`（含上下文、指令、prompt 模板、输出 schema），Agent 自由选择模型和调用方式
 - **证据链追踪** — 每条 Claim 都可溯源到原始 Source → Evidence → 链接关系，支持 `supports / contradicts / weakly_supported` 等多种证据角色，Agent 能做到真正的循证推理
-- **缺口自动检测** — `gap detect` 主动发现知识盲区（无证据支撑的断言、未回答的问题、孤立节点），驱动 Agent 下一轮自主搜索
-- **迭代式研究循环** — `research continue` 编排完整的"搜索→提取→质疑→补缺"循环，Agent 只需循环调用即可完成深度调研
+- **缺口自动检测** — `graph gaps --detect` 主动发现知识盲区（无证据支撑的断言、未回答的问题、孤立节点），驱动 Agent 下一轮自主搜索
+- **迭代式研究循环** — `task continue` 编排完整的"搜索→提取→质疑→补缺"循环，Agent 只需循环调用即可完成深度调研
 - **外置流程记忆** — 任务清单（Checklist）持久化到磁盘，Agent 跨会话恢复时能无缝续接未完成工作
 - **轻量无依赖** — 单文件 JSON 存储（`kg.json`），无需数据库，零运维成本，适合嵌入任何 Agent 工具链
 
@@ -91,8 +91,7 @@ git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
 
-# 构建并全局链接，之后可直接使用 `kg` 命令
-bun run build
+# 全局链接，之后可直接使用 `kg` 命令
 bun link
 ```
 
@@ -145,13 +144,10 @@ kg edge delete <id> --dir <dir>
 
 ```bash
 # 添加来源
-echo '{"title":"论文标题","type":"webpage"}' | kg node upsert --json-in - --dir <dir>
-
-# 查看来源
-kg source get <id> --dir <dir>
+echo '{"title":"论文标题","type":"webpage","kind":"Source"}' | kg node upsert --json-in - --dir <dir>
 
 # 添加证据
-echo '{"sourceId":"src_xxx","text":"原文引用片段","kind":"Evidence"}' | kg node upsert --json-in - --dir <dir>
+echo '{"sourceId":"src_xxx","snippet":"原文引用片段"}' | kg evidence add --json-in - --dir <dir>
 
 # 链接证据到 Claim
 kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
@@ -160,17 +156,20 @@ kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
 kg evidence list --target clm_1 --dir <dir>
 ```
 
-### Claim 管理
+### Claim & 节点状态
 
 ```bash
 # 创建 Claim
 echo '{"text":"Gemma 4 31B 在 MMLU Pro 上达到 85.2%","status":"proposed","kind":"Claim"}' | kg node upsert --json-in - --dir <dir>
 
-# 更新状态
-kg claim set-status clm_1 supported --dir <dir>
+# 更新状态（按节点类型分发）
+kg node set-status clm_1 supported --dir <dir>
 
 # 查看冲突
-kg claim conflicts clm_1 --dir <dir>
+kg node conflicts clm_1 --dir <dir>
+
+# 合并两个 Claim
+kg node merge clm_1 clm_2 --dir <dir>
 ```
 
 ### Question / Hypothesis
@@ -200,16 +199,9 @@ kg graph stats --dir <dir>
 
 # 图谱检查
 kg graph lint --dir <dir>
-```
 
-### 缺口检测
-
-```bash
-# 自动检测知识缺口
-kg gap detect --dir <dir>
-
-# 查看已检测到的缺口
-kg gap list --dir <dir>
+# 检测并列出知识缺口
+kg graph gaps --detect --dir <dir>
 ```
 
 ### 图谱可视化
@@ -245,18 +237,18 @@ kg graph export-html -o graph.html --task task_1 --dir <dir>
 
 ```bash
 # 生成 Markdown 报告
-kg report generate --task task_1 --dir <dir>
+kg graph report --task task_1 --dir <dir>
 
 # 生成 JSON 格式报告
-kg report generate --task task_1 --format json -o report.json --dir <dir>
+kg graph report --task task_1 --format json -o report.json --dir <dir>
 
 # 列出所有引用
-kg report citations --dir <dir>
+kg graph citations --dir <dir>
 ```
 
 ### LLM 任务编排
 
-所有 `llm` 命令不直接调用模型，只输出 JSON 格式的 `LlmTaskEnvelope`（含上下文、指令、推荐 prompt、输出 schema），由上层 Agent 执行。
+所有 `llm` 命令不直接调用模型，只输出 JSON 格式的 `LlmTaskEnvelope`（含上下文、指令、推荐 prompt、输出 schema），由上层 Agent 执行。任务类型通过位置参数指定。
 
 ```bash
 # 从来源提取实体
@@ -277,6 +269,9 @@ kg llm assess-evidence --claim clm_1 --dir <dir>
 # 实体/Claim 去重
 kg llm normalize-entities --dir <dir>
 kg llm normalize-claims --dir <dir>
+
+# 生成报告信封
+kg llm generate-report --task task_1 --topic "我的主题" --dir <dir>
 ```
 
 ## LLM 任务输出示例
@@ -369,8 +364,8 @@ temp/{topic}_{timestamp}/
 ## 测试
 
 ```bash
-bun test              # 单元测试
-bun test tests/e2e/   # E2E 测试
+bun run test              # 单元测试
+bun run test:e2e          # E2E 测试
 ```
 
 ## License

@@ -53,8 +53,8 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 - **Graph-as-Memory** — Agents no longer rely on sliding context windows or vector retrieval. Instead, they store and reason over knowledge through a semantic network of entities, claims, evidence, and questions
 - **Zero Model Coupling** — The CLI never calls any LLM API. It outputs standardized `LlmTaskEnvelope` objects (containing context, instructions, prompt templates, and output schemas), letting agents freely choose their model and invocation strategy
 - **Evidence Chain Tracking** — Every Claim traces back to its original Source → Evidence → Link relationship, supporting multiple evidence roles (`supports`, `contradicts`, `weakly_supported`). Agents achieve genuine evidence-based reasoning
-- **Automatic Gap Detection** — `gap detect` proactively discovers knowledge blind spots (unsubstantiated claims, unanswered questions, orphaned nodes), driving the agent's next autonomous search round
-- **Iterative Research Loop** — `research continue` orchestrates the full "search → extract → challenge → fill gaps" cycle. Agents complete deep research simply by looping
+- **Automatic Gap Detection** — `graph gaps --detect` proactively discovers knowledge blind spots (unsubstantiated claims, unanswered questions, orphaned nodes), driving the agent's next autonomous search round
+- **Iterative Research Loop** — `task continue` orchestrates the full "search → extract → challenge → fill gaps" cycle. Agents complete deep research simply by looping
 - **Externalized Process Memory** — Task checklists persist to disk, allowing agents to seamlessly resume unfinished work across sessions
 - **Lightweight & Dependency-Free** — Single-file JSON storage (`kg.json`), no database required, zero ops cost. Embeds into any agent toolchain
 
@@ -91,8 +91,7 @@ git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
 
-# Build and link globally so you can use `kg` directly
-bun run build
+# Link globally so you can use `kg` directly
 bun link
 ```
 
@@ -145,13 +144,10 @@ kg edge delete <id> --dir <dir>
 
 ```bash
 # Add a source
-echo '{"title":"Paper Title","type":"webpage"}' | kg node upsert --json-in - --dir <dir>
-
-# Get a source
-kg source get <id> --dir <dir>
+echo '{"title":"Paper Title","type":"webpage","kind":"Source"}' | kg node upsert --json-in - --dir <dir>
 
 # Add evidence
-echo '{"sourceId":"src_xxx","text":"Original quote","kind":"Evidence"}' | kg node upsert --json-in - --dir <dir>
+echo '{"sourceId":"src_xxx","snippet":"Original quote"}' | kg evidence add --json-in - --dir <dir>
 
 # Link evidence to a Claim
 kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
@@ -160,17 +156,20 @@ kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
 kg evidence list --target clm_1 --dir <dir>
 ```
 
-### Claim Management
+### Claim & Node Status
 
 ```bash
 # Create a Claim
 echo '{"text":"Gemma 4 31B scores 85.2% on MMLU Pro","status":"proposed","kind":"Claim"}' | kg node upsert --json-in - --dir <dir>
 
-# Update status
-kg claim set-status clm_1 supported --dir <dir>
+# Update status (dispatches by node kind)
+kg node set-status clm_1 supported --dir <dir>
 
 # Check conflicts
-kg claim conflicts clm_1 --dir <dir>
+kg node conflicts clm_1 --dir <dir>
+
+# Merge two claims
+kg node merge clm_1 clm_2 --dir <dir>
 ```
 
 ### Question / Hypothesis
@@ -200,16 +199,9 @@ kg graph stats --dir <dir>
 
 # Graph lint
 kg graph lint --dir <dir>
-```
 
-### Gap Detection
-
-```bash
-# Auto-detect knowledge gaps
-kg gap detect --dir <dir>
-
-# List detected gaps
-kg gap list --dir <dir>
+# Detect & list knowledge gaps
+kg graph gaps --detect --dir <dir>
 ```
 
 ### Graph Visualization
@@ -245,18 +237,18 @@ kg graph export-html -o graph.html --task task_1 --dir <dir>
 
 ```bash
 # Generate markdown report
-kg report generate --task task_1 --dir <dir>
+kg graph report --task task_1 --dir <dir>
 
 # Generate JSON report
-kg report generate --task task_1 --format json -o report.json --dir <dir>
+kg graph report --task task_1 --format json -o report.json --dir <dir>
 
 # List all citations
-kg report citations --dir <dir>
+kg graph citations --dir <dir>
 ```
 
 ### LLM Task Orchestration
 
-All `llm` commands do not call models directly. They output JSON-formatted `LlmTaskEnvelope` objects (containing context, instructions, recommended prompts, and output schemas) for the upstream agent to execute.
+All `llm` commands do not call models directly. They output JSON-formatted `LlmTaskEnvelope` objects (containing context, instructions, recommended prompts, and output schemas) for the upstream agent to execute. The task type is specified as a positional argument.
 
 ```bash
 # Extract entities from a source
@@ -277,6 +269,9 @@ kg llm assess-evidence --claim clm_1 --dir <dir>
 # Entity/Claim deduplication
 kg llm normalize-entities --dir <dir>
 kg llm normalize-claims --dir <dir>
+
+# Generate report envelope
+kg llm generate-report --task task_1 --topic "My Topic" --dir <dir>
 ```
 
 ## LLM Task Output Example
@@ -369,8 +364,8 @@ See [CHANGELOG.md](./CHANGELOG.md) for release history.
 ## Testing
 
 ```bash
-bun test              # Unit tests
-bun test tests/e2e/   # E2E tests
+bun run test              # Unit tests
+bun run test:e2e          # E2E tests
 ```
 
 ## License
