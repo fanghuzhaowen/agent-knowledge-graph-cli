@@ -1,4 +1,4 @@
-import type { BaseNode, Edge, EvidenceLinkTargetType } from "../core/models/types";
+import type { BaseNode, Edge } from "../core/models/types";
 import type { Services } from "./types";
 
 function dedupeTaskIds(taskIds: string[]): string[] {
@@ -45,7 +45,7 @@ export function markEdgeWorkflow(
 export function markEvidenceLinkWorkflow(
 	services: Services,
 	evidenceId: string,
-	targetType: EvidenceLinkTargetType,
+	targetType: "node" | "edge",
 	targetId: string,
 	workflowTexts: string[],
 ): void {

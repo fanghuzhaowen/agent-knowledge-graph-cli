@@ -2,15 +2,24 @@ import { describe, it, expect, afterEach } from "vitest";
 import { GraphStore } from "../../../src/storage/graph-store";
 import { GraphService } from "../../../src/core/services/graph-service";
 import { GapService } from "../../../src/core/services/gap-service";
+import { EvidenceService } from "../../../src/core/services/evidence-service";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-function createTestStore(): { store: GraphStore; graphService: GraphService; cleanup: () => void } {
+function createTestStore(): {
+	store: GraphStore;
+	graphService: GraphService;
+	gapService: GapService;
+	evidenceService: EvidenceService;
+	cleanup: () => void;
+} {
 	const dir = mkdtempSync(join(tmpdir(), "kg-test-"));
 	const store = new GraphStore(dir);
 	const graphService = new GraphService(store);
-	return { store, graphService, cleanup: () => rmSync(dir, { recursive: true }) };
+	const evidenceService = new EvidenceService(store, graphService);
+	const gapService = new GapService(store, graphService);
+	return { store, graphService, gapService, evidenceService, cleanup: () => rmSync(dir, { recursive: true }) };
 }
 
 let context: ReturnType<typeof createTestStore> | null = null;
@@ -23,104 +32,132 @@ afterEach(() => {
 });
 
 describe("GapService", () => {
-	it("should detect claims without evidence", () => {
+	it("should detect propositions without evidence as missing_evidence", () => {
 		context = createTestStore();
-		const service = new GapService(context.store, context.graphService);
-		// Create a claim with no evidence links
+		// Create an asserted proposition with no evidence links
 		context.graphService.upsertNode({
-			kind: "Claim",
+			type: "Proposition",
 			text: "Unevidenced claim",
-			status: "proposed",
+			status: "asserted",
 			attrs: {},
 		});
 
-		// detectGaps returns BaseNode[] of Gap nodes
-		const gaps = service.detectGaps();
-		const noEvidenceGaps = gaps.filter(
-			(g) => (g.attrs as Record<string, unknown>).gapType === "no_evidence",
-		);
+		const gaps = context.gapService.detectGaps();
+		const noEvidenceGaps = gaps.filter((g) => g.gapType === "missing_evidence");
 		expect(noEvidenceGaps.length).toBeGreaterThanOrEqual(1);
+		expect(noEvidenceGaps[0].targetId).toBeDefined();
+		expect(noEvidenceGaps[0].severity).toBeGreaterThanOrEqual(0);
+		expect(noEvidenceGaps[0].description).toContain("无任何证据支持");
 	});
 
-	it("should detect claims with only single source", () => {
+	it("should detect propositions with only single source as weak_support", () => {
 		context = createTestStore();
-		const service = new GapService(context.store, context.graphService);
-		// Create a claim and a source/evidence with only a single source
-		const source = context.graphService.upsertNode({
-			kind: "Source",
+		const source = context.evidenceService.addSource({
 			title: "Test Source",
-			type: "webpage",
-			attrs: {},
+			sourceType: "webpage",
 		});
-		const evidence = context.graphService.upsertNode({
-			kind: "Evidence",
-			text: "Evidence text",
-			attrs: { sourceId: source.id },
+		const evidence = context.evidenceService.addEvidence({
+			sourceId: source.id,
+			snippet: "Evidence text",
 		});
-		const claim = context.graphService.upsertNode({
-			kind: "Claim",
+		const prop = context.graphService.upsertNode({
+			type: "Proposition",
 			text: "Single-source claim",
-			status: "proposed",
+			status: "asserted",
 			attrs: {},
 		});
-		context.store.createEvidenceLink({
-			id: "evl_1",
-			evidenceId: evidence.id,
-			targetType: "node",
-			targetId: claim.id,
-			role: "supports",
-			createdAt: new Date().toISOString(),
-		});
+		context.evidenceService.linkEvidence(evidence.id, "node", prop.id, "supports");
 
-		// detectGaps returns BaseNode[] of Gap nodes
-		const gaps = service.detectGaps();
-		const insufficientGaps = gaps.filter(
-			(g) => (g.attrs as Record<string, unknown>).gapType === "insufficient_evidence",
-		);
-		expect(insufficientGaps.length).toBeGreaterThanOrEqual(1);
+		const gaps = context.gapService.detectGaps();
+		const weakGaps = gaps.filter((g) => g.gapType === "weak_support");
+		expect(weakGaps.length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("should detect long-open questions", () => {
+	it("should detect open propositions as unanswered", () => {
 		context = createTestStore();
-		const service = new GapService(context.store, context.graphService);
-		// Create an old open question
 		const oldDate = new Date();
 		oldDate.setDate(oldDate.getDate() - 30);
-		context.store.upsertNode({
-			id: "q_1",
-			kind: "Question",
-			text: "Old question",
+		context.graphService.upsertNode({
+			id: "prop_old",
+			type: "Proposition",
+			text: "An open question",
 			status: "open",
 			attrs: {},
-			createdAt: oldDate.toISOString(),
-			updatedAt: oldDate.toISOString(),
 		});
 
-		// detectGaps returns BaseNode[] of Gap nodes
-		const gaps = service.detectGaps();
-		const unresolvedGaps = gaps.filter(
-			(g) => (g.attrs as Record<string, unknown>).gapType === "unresolved_question",
-		);
+		const gaps = context.gapService.detectGaps();
+		const unresolvedGaps = gaps.filter((g) => g.gapType === "unanswered");
 		expect(unresolvedGaps.length).toBeGreaterThanOrEqual(1);
+		expect(unresolvedGaps[0].description).toContain("尚未回答");
 	});
 
-	it("should list all detected gaps via listGaps", () => {
+	it("should detect orphan nodes with no edges", () => {
 		context = createTestStore();
-		const service = new GapService(context.store, context.graphService);
+		// Entity with no edges — should be detected as orphan
 		context.graphService.upsertNode({
-			kind: "Claim",
-			text: "Unevidenced claim",
-			status: "proposed",
+			type: "Entity",
+			title: "Lonely Entity",
 			attrs: {},
 		});
 
-		// First detect gaps to create Gap nodes
-		service.detectGaps();
+		const gaps = context.gapService.detectGaps();
+		const orphanGaps = gaps.filter((g) => g.gapType === "orphan");
+		expect(orphanGaps.length).toBeGreaterThanOrEqual(1);
+	});
 
-		// listGaps requires a filters argument
-		const gaps = service.listGaps({});
+	it("should not detect Source nodes as orphans", () => {
+		context = createTestStore();
+		context.graphService.upsertNode({
+			type: "Source",
+			title: "Standalone Source",
+			attrs: { sourceType: "webpage" },
+		});
+
+		const gaps = context.gapService.detectGaps();
+		const orphanGaps = gaps.filter((g) => g.gapType === "orphan");
+		expect(orphanGaps).toHaveLength(0);
+	});
+
+	it("should return GapResult[] with correct shape", () => {
+		context = createTestStore();
+		context.graphService.upsertNode({
+			type: "Proposition",
+			text: "Test proposition",
+			status: "asserted",
+			attrs: {},
+		});
+
+		const gaps = context.gapService.detectGaps();
 		expect(gaps.length).toBeGreaterThanOrEqual(1);
-		// Each gap should be a Gap node
-		expect(gaps[0].kind).toBe("Gap");
+		const gap = gaps[0];
+		expect(gap).toHaveProperty("targetId");
+		expect(gap).toHaveProperty("gapType");
+		expect(gap).toHaveProperty("severity");
+		expect(gap).toHaveProperty("description");
+		expect(typeof gap.targetId).toBe("string");
+		expect(typeof gap.gapType).toBe("string");
+		expect(typeof gap.severity).toBe("number");
+		expect(typeof gap.description).toBe("string");
+	});
+
+	it("should not detect unrefined or open propositions as missing_evidence", () => {
+		context = createTestStore();
+		// unrefined and open propositions are skipped in the missing_evidence check
+		context.graphService.upsertNode({
+			type: "Proposition",
+			text: "Unrefined obs",
+			status: "unrefined",
+			attrs: {},
+		});
+		context.graphService.upsertNode({
+			type: "Proposition",
+			text: "Open question",
+			status: "open",
+			attrs: {},
+		});
+
+		const gaps = context.gapService.detectGaps();
+		const missingEvidence = gaps.filter((g) => g.gapType === "missing_evidence");
+		expect(missingEvidence).toHaveLength(0);
 	});
 });

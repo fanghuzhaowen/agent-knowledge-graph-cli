@@ -1,4 +1,5 @@
-import type { BaseNode, EvidenceLink } from "../models/types";
+import type { BaseNode } from "../models/types";
+import type { Edge } from "../models/types";
 import type { GraphStore } from "../../storage/graph-store";
 import type { GraphService } from "./graph-service";
 import type { EvidenceService } from "./evidence-service";
@@ -12,9 +13,9 @@ export interface Citation {
 	publishedAt?: string;
 }
 
-export interface ClaimCitation {
-	claimId: string;
-	claimText: string;
+export interface PropositionCitation {
+	propositionId: string;
+	propositionText: string;
 	status: string;
 	citationNumbers: number[];
 	evidenceCount: number;
@@ -24,10 +25,10 @@ export interface ReportOutput {
 	title: string;
 	sections: Array<{
 		heading: string;
-		claims: ClaimCitation[];
+		propositions: PropositionCitation[];
 	}>;
 	citations: Citation[];
-	uncitedClaims: ClaimCitation[];
+	uncitedPropositions: PropositionCitation[];
 }
 
 export class ReportService {
@@ -37,41 +38,38 @@ export class ReportService {
 		private evidenceService: EvidenceService,
 	) {}
 
-	/**
-	 * Build a source citation map for all claims in the graph.
-	 * Returns citations sorted by first appearance order.
-	 */
 	buildCitationMap(taskId?: string): {
 		citations: Citation[];
-		claimCitations: ClaimCitation[];
-		uncitedClaims: ClaimCitation[];
+		propositionCitations: PropositionCitation[];
+		uncitedPropositions: PropositionCitation[];
 	} {
-		// Get all claims, optionally filtered by task
-		const claims = this.graphService.listNodes({
-			kind: "Claim",
+		const propositions = this.graphService.listNodes({
+			type: "Proposition",
 			taskId,
 		});
 
-		// Build source citation map
-		const sourceOrder = new Map<string, number>(); // sourceId -> order of first appearance
-		const claimCitations: ClaimCitation[] = [];
-		const uncitedClaims: ClaimCitation[] = [];
+		const sourceOrder = new Map<string, number>();
+		const propositionCitations: PropositionCitation[] = [];
+		const uncitedPropositions: PropositionCitation[] = [];
 
-		for (const claim of claims) {
-			const supportingLinks = this.store.listEvidenceLinks(
-				(l) => l.targetId === claim.id && l.targetType === "node" && l.role === "supports",
+		for (const prop of propositions) {
+			// Skip unrefined/open propositions (questions/observations)
+			if (prop.status === "unrefined" || prop.status === "open") continue;
+
+			const supportingLinks = this.store.listEdges(
+				(e) => e.type === "evidence_link" && e.toId === prop.id && e.attrs?.role === "supports",
 			);
 
 			const citationNumbers: number[] = [];
 			for (const link of supportingLinks) {
-				const evidence = this.store.getNode(link.evidenceId);
-				if (!evidence || evidence.kind !== "Evidence") continue;
+				const evidence = this.store.getNode(link.fromId);
+				if (!evidence || evidence.type !== "Evidence") continue;
 
 				const sourceId = evidence.attrs?.sourceId as string | undefined;
 				if (!sourceId) continue;
 
 				const source = this.store.getNode(sourceId);
-				if (!source || source.kind !== "Source") continue;
+				if (!source || source.type !== "Source") continue;
 
 				if (!sourceOrder.has(sourceId)) {
 					const order = sourceOrder.size + 1;
@@ -80,25 +78,23 @@ export class ReportService {
 				citationNumbers.push(sourceOrder.get(sourceId)!);
 			}
 
-			// Sort citation numbers
 			citationNumbers.sort((a, b) => a - b);
 
-			const claimCitation: ClaimCitation = {
-				claimId: claim.id,
-				claimText: claim.text ?? claim.title ?? claim.id,
-				status: claim.status ?? "unknown",
+			const propCitation: PropositionCitation = {
+				propositionId: prop.id,
+				propositionText: prop.text ?? prop.title ?? prop.id,
+				status: prop.status ?? "unknown",
 				citationNumbers,
 				evidenceCount: supportingLinks.length,
 			};
 
 			if (citationNumbers.length === 0) {
-				uncitedClaims.push(claimCitation);
+				uncitedPropositions.push(propCitation);
 			} else {
-				claimCitations.push(claimCitation);
+				propositionCitations.push(propCitation);
 			}
 		}
 
-		// Build citations array in order
 		const citations: Citation[] = [];
 		for (const [sourceId, order] of sourceOrder) {
 			const source = this.store.getNode(sourceId);
@@ -108,58 +104,50 @@ export class ReportService {
 				number: order,
 				title: source.title ?? sourceId,
 				uri: source.attrs?.uri as string | undefined,
-				sourceType: source.type ?? "unknown",
+				sourceType: (source.attrs?.sourceType as string) ?? "unknown",
 				publishedAt: source.attrs?.publishedAt as string | undefined,
 			});
 		}
 
-		return { citations, claimCitations, uncitedClaims };
+		return { citations, propositionCitations, uncitedPropositions };
 	}
 
-	/**
-	 * Generate markdown report from citation map
-	 */
 	generateMarkdown(taskId?: string, title?: string): string {
-		const { citations, claimCitations, uncitedClaims } = this.buildCitationMap(taskId);
+		const { citations, propositionCitations, uncitedPropositions } = this.buildCitationMap(taskId);
 		const reportTitle = title ?? "研究报告";
 
 		const lines: string[] = [];
 
-		// Title
 		lines.push(`# ${reportTitle}`);
 		lines.push("");
 
-		// Summary stats
-		lines.push(`> 共 ${claimCitations.length} 条有引用的断言，${uncitedClaims.length} 条待引证`);
+		lines.push(`> 共 ${propositionCitations.length} 条有引用的命题，${uncitedPropositions.length} 条待引证`);
 		lines.push("");
 
-		// Main findings with citations
-		if (claimCitations.length > 0) {
+		if (propositionCitations.length > 0) {
 			lines.push("## 核心发现");
 			lines.push("");
-			for (const claim of claimCitations) {
-				const citeStr = claim.citationNumbers
+			for (const prop of propositionCitations) {
+				const citeStr = prop.citationNumbers
 					.map((n) => `[${n}]`)
 					.join("");
-				lines.push(`- **${claim.claimText}** ${citeStr}`);
-				lines.push(`  - 状态: ${claim.status} | 证据数: ${claim.evidenceCount}`);
+				lines.push(`- **${prop.propositionText}** ${citeStr}`);
+				lines.push(`  - 状态: ${prop.status} | 证据数: ${prop.evidenceCount}`);
 				lines.push("");
 			}
 		}
 
-		// Uncited claims
-		if (uncitedClaims.length > 0) {
-			lines.push("## 待引证断言");
+		if (uncitedPropositions.length > 0) {
+			lines.push("## 待引证命题");
 			lines.push("");
-			lines.push("> 以下断言尚无证据支持，建议补充调研");
+			lines.push("> 以下命题尚无证据支持，建议补充调研");
 			lines.push("");
-			for (const claim of uncitedClaims) {
-				lines.push(`- ${claim.claimText} *[${claim.status}]*`);
+			for (const prop of uncitedPropositions) {
+				lines.push(`- ${prop.propositionText} *[${prop.status}]*`);
 			}
 			lines.push("");
 		}
 
-		// References
 		lines.push("## 参考文献");
 		lines.push("");
 		if (citations.length === 0) {
@@ -178,32 +166,28 @@ export class ReportService {
 		}
 		lines.push("");
 
-		// Metadata
 		lines.push("---");
 		lines.push(`*报告生成时间: ${new Date().toISOString()}*`);
 
 		return lines.join("\n");
 	}
 
-	/**
-	 * Generate structured JSON report
-	 */
 	generateReport(taskId?: string, title?: string): ReportOutput {
-		const { citations, claimCitations, uncitedClaims } = this.buildCitationMap(taskId);
+		const { citations, propositionCitations, uncitedPropositions } = this.buildCitationMap(taskId);
 		return {
 			title: title ?? "研究报告",
 			sections: [
 				{
 					heading: "核心发现",
-					claims: claimCitations,
+					propositions: propositionCitations,
 				},
 				{
-					heading: "待引证断言",
-					claims: uncitedClaims,
+					heading: "待引证命题",
+					propositions: uncitedPropositions,
 				},
 			],
 			citations,
-			uncitedClaims,
+			uncitedPropositions,
 		};
 	}
 }

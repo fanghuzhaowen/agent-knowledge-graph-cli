@@ -1,7 +1,7 @@
 import type { PromptTemplateContext } from "../core/models/types";
 
 export function buildPrompt(ctx: PromptTemplateContext): string {
-	const entities = (ctx.focusNodes ?? []).filter((n) => n.kind === "Entity");
+	const entities = (ctx.focusNodes ?? []).filter((n) => n.type === "Entity");
 
 	const entityList = entities
 		.map((n) => {

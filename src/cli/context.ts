@@ -2,8 +2,7 @@ import { GraphStore } from "../storage/graph-store";
 import type { Services } from "./types";
 import { GraphService } from "../core/services/graph-service";
 import { EvidenceService } from "../core/services/evidence-service";
-import { ClaimService } from "../core/services/claim-service";
-import { QuestionService } from "../core/services/question-service";
+import { PropositionService } from "../core/services/proposition-service";
 import { GapService } from "../core/services/gap-service";
 import { LlmTaskService } from "../core/services/llm-task-service";
 import { ReportService } from "../core/services/report-service";
@@ -25,14 +24,13 @@ export function getContext(): AppContext {
 function createServices(store: GraphStore): Services {
 	const graph = new GraphService(store);
 	const evidence = new EvidenceService(store, graph);
-	const claim = new ClaimService(store, graph);
-	const question = new QuestionService(store, graph);
+	const proposition = new PropositionService(store, graph);
 	const gap = new GapService(store, graph);
 	const taskChecklist = new TaskChecklistService(store);
-	const llmTask = new LlmTaskService(store, graph, claim, question, gap, evidence, taskChecklist);
+	const llmTask = new LlmTaskService(store, graph, proposition, gap, evidence, taskChecklist);
 	const report = new ReportService(store, graph, evidence);
-	const research = new ResearchService(store, graph, llmTask, question, gap, taskChecklist);
-	return { graph, evidence, claim, question, gap, llmTask, report, research, taskChecklist };
+	const research = new ResearchService(store, graph, llmTask, proposition, gap, taskChecklist);
+	return { graph, evidence, proposition, gap, llmTask, report, research, taskChecklist };
 }
 
 export function initContext(dir: string): AppContext {

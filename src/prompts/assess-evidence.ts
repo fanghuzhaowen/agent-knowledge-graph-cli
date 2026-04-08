@@ -1,7 +1,7 @@
 import type { PromptTemplateContext } from "../core/models/types";
 
 export function buildPrompt(ctx: PromptTemplateContext): string {
-	const focusClaim = (ctx.focusNodes ?? []).find((n) => n.kind === "Claim");
+	const focusClaim = (ctx.focusNodes ?? []).find((n) => n.type === "Proposition");
 	const claimInfo = focusClaim
 		? `## 待评估断言
 ID: ${focusClaim.id}
@@ -19,7 +19,7 @@ ID: ${focusClaim.id}
 		})
 		.join("\n");
 
-	const relatedClaims = (ctx.relatedClaims ?? [])
+	const relatedClaims = (ctx.relatedPropositions ?? [])
 		.filter((n) => focusClaim && n.id !== focusClaim.id)
 		.map((n) => `- [${n.id}] "${n.text ?? n.summary ?? n.id}" (状态: ${n.status ?? "未知"})`)
 		.join("\n");

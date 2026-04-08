@@ -1,16 +1,16 @@
 import type { PromptTemplateContext } from "../core/models/types";
 
 export function buildPrompt(ctx: PromptTemplateContext): string {
-	const claims = (ctx.relatedClaims ?? [])
+	const claims = (ctx.relatedPropositions ?? [])
 		.map((n) => `- [${n.id}] "${n.text ?? n.summary ?? n.id}" (状态: ${n.status ?? "未知"}, 置信度: ${n.confidence ?? "未评估"})`)
 		.join("\n");
 
-	const existingQuestions = (ctx.openQuestions ?? [])
+	const existingQuestions = (ctx.openPropositions ?? [])
 		.map((n) => `- [${n.id}] "${n.text ?? n.summary ?? n.id}" (状态: ${n.status ?? "未知"}, 优先级: ${n.attrs?.priority ?? "未设置"})`)
 		.join("\n");
 
 	const entities = (ctx.focusNodes ?? [])
-		.filter((n) => n.kind === "Entity")
+		.filter((n) => n.type === "Entity")
 		.map((n) => `- ${n.title ?? n.id} (${n.type ?? "未分类"})`)
 		.join("\n");
 

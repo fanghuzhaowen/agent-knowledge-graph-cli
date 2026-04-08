@@ -26,14 +26,13 @@ describe("EvidenceService", () => {
 	it("should create a source via addSource", () => {
 		context = createTestStore();
 		const service = new EvidenceService(context.store, context.graphService);
-		// addSource takes { title, uri?, sourceType, attrs? }
 		const source = service.addSource({
 			sourceType: "webpage",
 			title: "Gemma 4 Technical Report",
 			uri: "https://example.com/report",
 		});
 		expect(source.id).toMatch(/^src_/);
-		expect(source.kind).toBe("Source");
+		expect(source.type).toBe("Source");
 		expect(source.title).toBe("Gemma 4 Technical Report");
 	});
 
@@ -44,13 +43,12 @@ describe("EvidenceService", () => {
 			sourceType: "webpage",
 			title: "Test Source",
 		});
-		// addEvidence takes { sourceId, snippet, quote?, locator?, confidence?, attrs? }
 		const evidence = service.addEvidence({
 			sourceId: source.id,
 			snippet: "Gemma 4 31B achieves 85.2% on MMLU Pro.",
 		});
 		expect(evidence.id).toMatch(/^ev_/);
-		expect(evidence.kind).toBe("Evidence");
+		expect(evidence.type).toBe("Evidence");
 		expect(evidence.attrs.sourceId).toBe(source.id);
 	});
 
@@ -63,21 +61,22 @@ describe("EvidenceService", () => {
 			snippet: "Evidence text",
 		});
 
-		// Create a target node
+		// Create a target proposition node
 		context.graphService.upsertNode({
-			kind: "Claim",
-			text: "A claim",
-			status: "proposed",
+			type: "Proposition",
+			text: "A proposition to link evidence to",
+			status: "asserted",
 			attrs: {},
 		});
-		// Find the claim that was just created
-		const claims = context.graphService.listNodes({ kind: "Claim" });
-		const claim = claims[0];
+		const propositions = context.graphService.listNodes({ type: "Proposition" });
+		const prop = propositions[0];
 
-		const link = service.linkEvidence(evidence.id, "node", claim.id, "supports");
-		expect(link.evidenceId).toBe(evidence.id);
-		expect(link.targetId).toBe(claim.id);
-		expect(link.role).toBe("supports");
+		const link = service.linkEvidence(evidence.id, "node", prop.id, "supports");
+		// linkEvidence returns an Edge now (not EvidenceLink)
+		expect(link.type).toBe("evidence_link");
+		expect(link.fromId).toBe(evidence.id);
+		expect(link.toId).toBe(prop.id);
+		expect(link.attrs.role).toBe("supports");
 	});
 
 	it("should list evidence by target via listEvidenceByTarget", () => {
@@ -88,19 +87,18 @@ describe("EvidenceService", () => {
 		const ev2 = service.addEvidence({ sourceId: source.id, snippet: "Ev2" });
 
 		context.graphService.upsertNode({
-			kind: "Claim",
-			text: "A claim",
-			status: "proposed",
+			type: "Proposition",
+			text: "A proposition to test listing",
+			status: "asserted",
 			attrs: {},
 		});
-		const claims = context.graphService.listNodes({ kind: "Claim" });
-		const claim = claims[0];
+		const propositions = context.graphService.listNodes({ type: "Proposition" });
+		const prop = propositions[0];
 
-		service.linkEvidence(ev1.id, "node", claim.id, "supports");
-		service.linkEvidence(ev2.id, "node", claim.id, "contradicts");
+		service.linkEvidence(ev1.id, "node", prop.id, "supports");
+		service.linkEvidence(ev2.id, "node", prop.id, "contradicts");
 
-		// listEvidenceByTarget returns { evidence, links }, not a flat array
-		const result = service.listEvidenceByTarget(claim.id);
+		const result = service.listEvidenceByTarget(prop.id);
 		expect(result.evidence).toHaveLength(2);
 	});
 
@@ -112,20 +110,19 @@ describe("EvidenceService", () => {
 		const ev2 = service.addEvidence({ sourceId: source.id, snippet: "Ev2" });
 
 		context.graphService.upsertNode({
-			kind: "Claim",
-			text: "A claim",
-			status: "proposed",
+			type: "Proposition",
+			text: "A proposition to test role filtering",
+			status: "asserted",
 			attrs: {},
 		});
-		const claims = context.graphService.listNodes({ kind: "Claim" });
-		const claim = claims[0];
+		const propositions = context.graphService.listNodes({ type: "Proposition" });
+		const prop = propositions[0];
 
-		service.linkEvidence(ev1.id, "node", claim.id, "supports");
-		service.linkEvidence(ev2.id, "node", claim.id, "contradicts");
+		service.linkEvidence(ev1.id, "node", prop.id, "supports");
+		service.linkEvidence(ev2.id, "node", prop.id, "contradicts");
 
-		// listEvidenceByTarget does not accept a role filter; filter links manually
-		const result = service.listEvidenceByTarget(claim.id);
-		const supportingLinks = result.links.filter((l) => l.role === "supports");
+		const result = service.listEvidenceByTarget(prop.id);
+		const supportingLinks = result.links.filter((l) => l.attrs?.role === "supports");
 		expect(supportingLinks).toHaveLength(1);
 	});
 });

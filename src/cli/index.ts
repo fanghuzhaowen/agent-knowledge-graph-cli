@@ -11,17 +11,10 @@ import { TaskChecklistService } from "../core/services/task-checklist-service";
 
 import { registerNodeCommand } from "./commands/node";
 import { registerEdgeCommand } from "./commands/edge";
-import { registerSourceCommand } from "./commands/source";
 import { registerEvidenceCommand } from "./commands/evidence";
-import { registerClaimCommand } from "./commands/claim";
-import { registerQuestionCommand } from "./commands/question";
-import { registerHypothesisCommand } from "./commands/hypothesis";
-import { registerGapCommand } from "./commands/gap";
 import { registerGraphCommand } from "./commands/graph";
 import { registerTaskCommand } from "./commands/task";
 import { registerLlmCommand } from "./commands/llm";
-import { registerReportCommand } from "./commands/report";
-import { registerResearchCommand } from "./commands/research";
 
 // ── Helpers ──
 
@@ -93,17 +86,10 @@ program
 
 registerNodeCommand(program);
 registerEdgeCommand(program);
-registerSourceCommand(program);
 registerEvidenceCommand(program);
-registerClaimCommand(program);
-registerQuestionCommand(program);
-registerHypothesisCommand(program);
-registerGapCommand(program);
 registerGraphCommand(program);
 registerTaskCommand(program);
 registerLlmCommand(program);
-registerReportCommand(program);
-registerResearchCommand(program);
 
 // ── Initialize context before each action (except new-topic) ──
 

@@ -1,4 +1,4 @@
-import type { BaseNode, Edge, EvidenceLink, NodeKind, OpLog } from "../models/types";
+import type { BaseNode, Edge, NodeType, OpLog } from "../models/types";
 import type { GraphStore } from "../../storage/graph-store";
 import { generateId } from "../../utils/ids";
 import { now } from "../../utils/time";
@@ -59,7 +59,7 @@ export class GraphService {
 		return false;
 	}
 
-	upsertNode(data: Partial<BaseNode> & { id?: string; kind: NodeKind; taskId?: string | string[] }): BaseNode {
+	upsertNode(data: Partial<BaseNode> & { id?: string; type: NodeType; taskId?: string | string[] }): BaseNode {
 		const timestamp = now();
 		let node: BaseNode;
 		const taskIds = this.normalizeTaskIds(data.taskId, data.attrs);
@@ -76,7 +76,6 @@ export class GraphService {
 			} else {
 				node = {
 					id: data.id,
-					kind: data.kind,
 					type: data.type,
 					title: data.title,
 					text: data.text,
@@ -90,8 +89,7 @@ export class GraphService {
 			}
 		} else {
 			node = {
-				id: generateId(data.kind),
-				kind: data.kind,
+				id: generateId(data.type),
 				type: data.type,
 				title: data.title,
 				text: data.text,
@@ -118,7 +116,7 @@ export class GraphService {
 			id: generateId("opLog"),
 			opType: data.id && this.store.getNode(data.id) ? "update_node" : "create_node",
 			actor: "human",
-			payload: { nodeId: node.id, kind: node.kind },
+			payload: { nodeId: node.id, type: node.type },
 			createdAt: timestamp,
 		});
 		this.store.save();
@@ -129,9 +127,9 @@ export class GraphService {
 		return this.store.getNode(id);
 	}
 
-	listNodes(filters?: { kind?: string; status?: string; taskId?: string }): BaseNode[] {
+	listNodes(filters?: { type?: string; status?: string; taskId?: string }): BaseNode[] {
 		return this.store.listNodes((n) => {
-			if (filters?.kind && n.kind !== filters.kind) return false;
+			if (filters?.type && n.type !== filters.type) return false;
 			if (filters?.status && n.status !== filters.status) return false;
 			if (filters?.taskId && !this.belongsToTask(n, filters.taskId)) {
 				return false;
@@ -271,9 +269,6 @@ export class GraphService {
 		return { nodes: collectedNodes, edges: collectedEdges };
 	}
 
-	/**
-	 * Find shortest path between two nodes using BFS.
-	 */
 	findPath(fromId: string, toId: string, maxDepth: number = 4): { nodes: BaseNode[]; edges: Edge[] } | null {
 		const fromNode = this.store.getNode(fromId);
 		if (!fromNode) throw new Error(`源节点不存在: ${fromId}`);
@@ -281,7 +276,6 @@ export class GraphService {
 		if (!toNode) throw new Error(`目标节点不存在: ${toId}`);
 		if (fromId === toId) return { nodes: [fromNode], edges: [] };
 
-		// BFS with parent tracking
 		const visited = new Set<string>([fromId]);
 		const parent = new Map<string, { nodeId: string; edgeId: string }>();
 
@@ -304,7 +298,6 @@ export class GraphService {
 					nextFrontier.add(neighborId);
 
 					if (neighborId === toId) {
-						// Reconstruct path
 						const pathEdges: Edge[] = [];
 						const pathNodeIds = new Set<string>([toId]);
 						let current: string | undefined = toId;
@@ -330,7 +323,7 @@ export class GraphService {
 			frontier = nextFrontier;
 		}
 
-		return null; // No path found within maxDepth
+		return null;
 	}
 
 	getSubgraph(filters: {
@@ -373,7 +366,7 @@ export class GraphService {
 	}
 
 	getStats(taskId?: string): {
-		nodeCountByKind: Record<string, number>;
+		nodeCountByType: Record<string, number>;
 		edgeCountByType: Record<string, number>;
 		totalNodes: number;
 		totalEdges: number;
@@ -385,9 +378,9 @@ export class GraphService {
 			return nodeIds.has(e.fromId) && nodeIds.has(e.toId);
 		});
 
-		const nodeCountByKind: Record<string, number> = {};
+		const nodeCountByType: Record<string, number> = {};
 		for (const node of nodes) {
-			nodeCountByKind[node.kind] = (nodeCountByKind[node.kind] ?? 0) + 1;
+			nodeCountByType[node.type] = (nodeCountByType[node.type] ?? 0) + 1;
 		}
 
 		const edgeCountByType: Record<string, number> = {};
@@ -396,7 +389,7 @@ export class GraphService {
 		}
 
 		return {
-			nodeCountByKind,
+			nodeCountByType,
 			edgeCountByType,
 			totalNodes: nodes.length,
 			totalEdges: edges.length,
@@ -415,20 +408,17 @@ export class GraphService {
 
 		const nodes = taskId ? this.listNodes({ taskId }) : this.store.listNodes();
 
-		// Check for orphan nodes (no edges, not Task/Question/Gap kind — these are valid standalone)
-		const standaloneKinds = new Set(["Task", "Question", "Gap", "Hypothesis", "Source"]);
+		// Check for orphan nodes (no edges, Source is valid standalone)
+		const standaloneTypes = new Set(["Source"]);
 		for (const node of nodes) {
-			if (standaloneKinds.has(node.kind)) continue;
+			if (standaloneTypes.has(node.type)) continue;
 			const hasEdges = this.store.listEdges(
 				(e) => e.fromId === node.id || e.toId === node.id,
 			);
-			const hasEvidenceLinks = this.store.listEvidenceLinks(
-				(l) => l.targetId === node.id || l.evidenceId === node.id,
-			);
-			if (hasEdges.length === 0 && hasEvidenceLinks.length === 0) {
+			if (hasEdges.length === 0) {
 				issues.push({
 					severity: "warning",
-					message: `孤立节点: "${node.title ?? node.id}" (${node.kind}) 无任何边或证据链接连接`,
+					message: `孤立节点: "${node.title ?? node.id}" (${node.type}) 无任何边连接`,
 					nodeId: node.id,
 				});
 			}
@@ -453,25 +443,24 @@ export class GraphService {
 			}
 		}
 
-		// Check for Claims without evidence
+		// Check for Propositions without evidence
 		for (const node of nodes) {
-			if (node.kind !== "Claim") continue;
-			const evidenceLinks = this.store.listEvidenceLinks(
-				(l) => l.targetId === node.id && l.targetType === "node",
+			if (node.type !== "Proposition") continue;
+			const evidenceLinks = this.store.listEdges(
+				(e) => e.type === "evidence_link" && e.toId === node.id,
 			);
 			if (evidenceLinks.length === 0) {
 				issues.push({
 					severity: "warning",
-					message: `断言 "${node.text ?? node.title ?? node.id}" 无证据支持`,
+					message: `命题 "${node.text ?? node.title ?? node.id}" 无证据支持`,
 					nodeId: node.id,
 				});
 			}
-			// Check for shallow claims (text too short)
 			const text = node.text ?? "";
 			if (text.length < 50) {
 				issues.push({
 					severity: "warning",
-					message: `断言 "${text.substring(0, 30)}..." 过短（${text.length}字），应≥50字，包含完整知识（机制+条件+证据）`,
+					message: `命题 "${text.substring(0, 30)}..." 过短（${text.length}字），应≥50字，包含完整知识`,
 					nodeId: node.id,
 				});
 			}
@@ -479,7 +468,7 @@ export class GraphService {
 
 		// Check for Evidence text length
 		for (const node of nodes) {
-			if (node.kind !== "Evidence") continue;
+			if (node.type !== "Evidence") continue;
 			const text = node.text ?? "";
 			if (text.length < 20) {
 				issues.push({
@@ -490,9 +479,9 @@ export class GraphService {
 			}
 		}
 
-		// Check for long-standing open Questions
+		// Check for long-standing open propositions
 		for (const node of nodes) {
-			if (node.kind !== "Question" || node.status !== "open") continue;
+			if (node.type !== "Proposition" || node.status !== "open") continue;
 			const createdAt = new Date(node.createdAt);
 			const daysSinceCreation =
 				(Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);

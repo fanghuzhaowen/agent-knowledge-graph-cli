@@ -1,7 +1,6 @@
-import type { BaseNode } from "../models/types";
+import type { BaseNode, GapResult } from "../models/types";
 import type { GraphStore } from "../../storage/graph-store";
 import type { GraphService } from "./graph-service";
-import { now } from "../../utils/time";
 
 export class GapService {
 	constructor(
@@ -10,112 +9,80 @@ export class GapService {
 	) {}
 
 	/**
-	 * Build a unique key for an existing gap to detect duplicates.
+	 * Detect gaps as pure computation — returns results without creating nodes.
 	 */
-	private buildGapKey(node: BaseNode): string {
-		return `${node.attrs?.gapType ?? "unknown"}:${node.attrs?.relatedNodeId ?? node.id}`;
-	}
+	detectGaps(taskId?: string): GapResult[] {
+		const propositions = this.graphService.listNodes({ type: "Proposition", taskId });
+		const gaps: GapResult[] = [];
 
-	/**
-	 * Detect gaps, avoiding duplicates based on gapType + relatedNodeId.
-	 */
-	detectGaps(taskId?: string): BaseNode[] {
-		const claims = this.graphService.listNodes({ kind: "Claim", taskId });
-		const questions = this.graphService.listNodes({ kind: "Question", taskId });
+		// Check asserted propositions without evidence
+		for (const prop of propositions) {
+			if (prop.status === "unrefined" || prop.status === "open") continue;
 
-		// Collect existing gap keys to avoid duplicates
-		const existingGaps = this.graphService.listNodes({ kind: "Gap", taskId });
-		const existingGapKeys = new Set(existingGaps.map((g) => this.buildGapKey(g)));
-
-		const gaps: BaseNode[] = [];
-
-		// Check claims without evidence
-		for (const claim of claims) {
-			const evidenceLinks = this.store.listEvidenceLinks(
-				(l) => l.targetId === claim.id && l.targetType === "node",
+			const evidenceLinks = this.store.listEdges(
+				(e) => e.type === "evidence_link" && e.toId === prop.id,
 			);
 
-			const gapKey = `no_evidence:${claim.id}`;
-			if (evidenceLinks.length === 0 && !existingGapKeys.has(gapKey)) {
-				const gap = this.graphService.upsertNode({
-					kind: "Gap",
-					text: `断言 "${claim.text ?? claim.title ?? claim.id}" 无任何证据支持`,
-					status: "open",
-					attrs: {
-						gapType: "no_evidence",
-						severity: 0.8,
-						relatedNodeId: claim.id,
-						taskId,
-					},
+			if (evidenceLinks.length === 0) {
+				gaps.push({
+					targetId: prop.id,
+					gapType: "missing_evidence",
+					severity: 0.8,
+					description: `命题 "${prop.text ?? prop.title ?? prop.id}" 无任何证据支持`,
 				});
-				gaps.push(gap);
-				existingGapKeys.add(gapKey); // prevent duplicate within same run
 			} else {
-				// Check for insufficient evidence: only supports, no contradicts, single source
-				const supports = evidenceLinks.filter((l) => l.role === "supports");
-				const contradicts = evidenceLinks.filter((l) => l.role === "contradicts");
+				// Check for insufficient evidence: only supports, single source
+				const supports = evidenceLinks.filter((l) => l.attrs?.role === "supports");
+				const contradicts = evidenceLinks.filter((l) => l.attrs?.role === "contradicts");
 				const sourceIds = new Set<string>();
 
 				for (const link of evidenceLinks) {
-					const evidence = this.store.getNode(link.evidenceId);
+					const evidence = this.store.getNode(link.fromId);
 					if (evidence?.attrs?.sourceId) {
 						sourceIds.add(evidence.attrs.sourceId as string);
 					}
 				}
 
-				const insufficientKey = `insufficient_evidence:${claim.id}`;
-				if (supports.length > 0 && contradicts.length === 0 && sourceIds.size <= 1 && !existingGapKeys.has(insufficientKey)) {
-					const gap = this.graphService.upsertNode({
-						kind: "Gap",
-						text: `断言 "${claim.text ?? claim.title ?? claim.id}" 证据不充分：仅有 ${sourceIds.size} 个来源的支持证据，无反驳证据`,
-						status: "open",
-						attrs: {
-							gapType: "insufficient_evidence",
-							severity: 0.5,
-							relatedNodeId: claim.id,
-							sourceCount: sourceIds.size,
-							taskId,
-						},
+				if (supports.length > 0 && contradicts.length === 0 && sourceIds.size <= 1) {
+					gaps.push({
+						targetId: prop.id,
+						gapType: "weak_support",
+						severity: 0.5,
+						description: `命题 "${prop.text ?? prop.title ?? prop.id}" 证据不充分：仅有 ${sourceIds.size} 个来源`,
 					});
-					gaps.push(gap);
-					existingGapKeys.add(insufficientKey);
 				}
 			}
 		}
 
-		// Check for long-standing open questions
-		for (const question of questions) {
-			if (question.status !== "open") continue;
-			const createdAt = new Date(question.createdAt);
-			const daysSinceCreation =
-				(Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
-			const unresolvedKey = `unresolved_question:${question.id}`;
-			if (daysSinceCreation > 3 && !existingGapKeys.has(unresolvedKey)) {
-				const gap = this.graphService.upsertNode({
-					kind: "Gap",
-					text: `问题 "${question.text ?? question.title ?? question.id}" 已保持 open 状态 ${Math.floor(daysSinceCreation)} 天未解决`,
-					status: "open",
-					attrs: {
-						gapType: "unresolved_question",
-						severity: 0.6,
-						relatedNodeId: question.id,
-						daysOpen: Math.floor(daysSinceCreation),
-						taskId,
-					},
+		// Check for open (unanswered) questions
+		for (const prop of propositions) {
+			if (prop.status !== "open") continue;
+			gaps.push({
+				targetId: prop.id,
+				gapType: "unanswered",
+				severity: 0.6,
+				description: `问题 "${prop.text ?? prop.title ?? prop.id}" 尚未回答`,
+			});
+		}
+
+		// Check for orphan nodes (no edges at all)
+		const nodes = taskId ? this.graphService.listNodes({ taskId }) : this.store.listNodes();
+		const standaloneTypes = new Set(["Source"]);
+		for (const node of nodes) {
+			if (standaloneTypes.has(node.type)) continue;
+			const hasEdges = this.store.listEdges(
+				(e) => e.fromId === node.id || e.toId === node.id,
+			);
+			if (hasEdges.length === 0) {
+				gaps.push({
+					targetId: node.id,
+					gapType: "orphan",
+					severity: 0.3,
+					description: `节点 "${node.title ?? node.text ?? node.id}" (${node.type}) 无任何边连接`,
 				});
-				gaps.push(gap);
-				existingGapKeys.add(unresolvedKey);
 			}
 		}
 
 		return gaps;
-	}
-
-	listGaps(filters: { taskId?: string; status?: string }): BaseNode[] {
-		return this.graphService.listNodes({
-			kind: "Gap",
-			status: filters.status,
-			taskId: filters.taskId,
-		});
 	}
 }

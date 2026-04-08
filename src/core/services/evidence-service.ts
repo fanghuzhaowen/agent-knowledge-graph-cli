@@ -1,9 +1,9 @@
-import type { BaseNode, EvidenceLink, EvidenceLinkRole, EvidenceLinkTargetType } from "../models/types";
+import type { BaseNode, EvidenceLinkRole } from "../models/types";
+import type { Edge } from "../models/types";
 import type { GraphStore } from "../../storage/graph-store";
 import type { GraphService } from "./graph-service";
 import { generateId } from "../../utils/ids";
 import { now } from "../../utils/time";
-import { validateEvidenceLink } from "../schemas";
 
 export class EvidenceService {
 	constructor(
@@ -40,13 +40,13 @@ export class EvidenceService {
 		taskId?: string | string[];
 	}): BaseNode {
 		return this.graphService.upsertNode({
-			kind: "Source",
+			type: "Source",
 			title: data.title,
-			type: data.sourceType,
 			text: data.text,
 			summary: data.summary,
 			attrs: {
 				uri: data.uri,
+				sourceType: data.sourceType,
 				...data.attrs,
 			},
 			taskId: data.taskId,
@@ -55,7 +55,7 @@ export class EvidenceService {
 
 	getSource(id: string): BaseNode | undefined {
 		const node = this.store.getNode(id);
-		if (node && node.kind === "Source") return node;
+		if (node && node.type === "Source") return node;
 		return undefined;
 	}
 
@@ -80,11 +80,13 @@ export class EvidenceService {
 		if (patch.uri !== undefined) {
 			attrs.uri = patch.uri;
 		}
+		if (patch.sourceType !== undefined) {
+			attrs.sourceType = patch.sourceType;
+		}
 
 		return this.graphService.upsertNode({
 			...source,
 			title: patch.title ?? source.title,
-			type: patch.sourceType ?? source.type,
 			text: patch.text ?? source.text,
 			summary: patch.summary ?? source.summary,
 			attrs,
@@ -105,14 +107,14 @@ export class EvidenceService {
 		if (!source) {
 			throw new Error(`来源节点不存在: ${data.sourceId}`);
 		}
-		if (source.kind !== "Source") {
-			throw new Error(`节点 ${data.sourceId} 不是 Source 类型，而是 ${source.kind}`);
+		if (source.type !== "Source") {
+			throw new Error(`节点 ${data.sourceId} 不是 Source 类型，而是 ${source.type}`);
 		}
 
 		const inheritedTaskIds = this.getNodeTaskIds(source);
 
 		return this.graphService.upsertNode({
-			kind: "Evidence",
+			type: "Evidence",
 			text: data.snippet,
 			confidence: data.confidence,
 			attrs: {
@@ -128,7 +130,7 @@ export class EvidenceService {
 
 	getEvidence(id: string): BaseNode | undefined {
 		const node = this.store.getNode(id);
-		if (node && node.kind === "Evidence") return node;
+		if (node && node.type === "Evidence") return node;
 		return undefined;
 	}
 
@@ -138,12 +140,12 @@ export class EvidenceService {
 		targetId: string,
 		role: EvidenceLinkRole,
 		confidence?: number,
-	): EvidenceLink {
+	): Edge {
 		const evidence = this.store.getNode(evidenceId);
 		if (!evidence) {
 			throw new Error(`证据节点不存在: ${evidenceId}`);
 		}
-		if (evidence.kind !== "Evidence") {
+		if (evidence.type !== "Evidence") {
 			throw new Error(`节点 ${evidenceId} 不是 Evidence 类型`);
 		}
 
@@ -160,35 +162,48 @@ export class EvidenceService {
 		}
 
 		const timestamp = now();
-		const link: EvidenceLink = validateEvidenceLink({
+		const edge: Edge = {
 			id: generateId("evidenceLink"),
-			evidenceId,
-			targetType,
-			targetId,
-			role,
+			type: "evidence_link",
+			fromId: evidenceId,
+			toId: targetId,
+			directed: true,
 			confidence,
+			attrs: {
+				role,
+				targetType,
+			},
 			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+
+		const validatedEdge = this.graphService.createEdge({
+			fromId: edge.fromId,
+			toId: edge.toId,
+			type: edge.type,
+			directed: edge.directed,
+			confidence: edge.confidence,
+			attrs: edge.attrs,
 		});
 
-		this.store.createEvidenceLink(link);
 		this.store.addOpLog({
 			id: generateId("opLog"),
 			opType: "link_evidence",
 			actor: "human",
-			payload: { linkId: link.id, evidenceId, targetType, targetId, role },
+			payload: { edgeId: validatedEdge.id, evidenceId, targetType, targetId, role },
 			createdAt: timestamp,
 		});
 		this.store.save();
-		return link;
+		return validatedEdge;
 	}
 
-	listEvidenceByTarget(targetId: string, role?: EvidenceLinkRole): { evidence: BaseNode[]; links: EvidenceLink[] } {
-		const links = this.store.listEvidenceLinks(
-			(l) => l.targetId === targetId && (!role || l.role === role),
+	listEvidenceByTarget(targetId: string, role?: EvidenceLinkRole): { evidence: BaseNode[]; links: Edge[] } {
+		const links = this.store.listEdges(
+			(e) => e.type === "evidence_link" && e.toId === targetId && (!role || e.attrs?.role === role),
 		);
 		const evidence: BaseNode[] = [];
 		for (const link of links) {
-			const node = this.store.getNode(link.evidenceId);
+			const node = this.store.getNode(link.fromId);
 			if (node) {
 				evidence.push(node);
 			}
@@ -198,7 +213,7 @@ export class EvidenceService {
 
 	getSourceForEvidence(evidenceId: string): BaseNode | undefined {
 		const evidence = this.store.getNode(evidenceId);
-		if (!evidence || evidence.kind !== "Evidence") return undefined;
+		if (!evidence || evidence.type !== "Evidence") return undefined;
 		const sourceId = evidence.attrs?.sourceId as string | undefined;
 		if (!sourceId) return undefined;
 		return this.store.getNode(sourceId);

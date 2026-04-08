@@ -1,9 +1,9 @@
 import type { Command } from "commander";
+import { writeFileSync } from "node:fs";
 import { getContext } from "../context";
 import { markTaskWorkflow } from "../checklist";
 import { WORKFLOW_ITEMS } from "../../core/services/task-checklist-service";
 import { writeJson } from "../../utils/json";
-import { writeFileSync } from "node:fs";
 import { ExportHtmlService } from "../../core/services/export-html-service";
 
 function writeError(message: string): never {
@@ -12,7 +12,7 @@ function writeError(message: string): never {
 }
 
 export function registerGraphCommand(program: Command): void {
-	const cmd = program.command("graph").description("Graph exploration and analysis");
+	const cmd = program.command("graph").description("Graph exploration, analysis, and export");
 
 	cmd
 		.command("neighbors <id>")
@@ -118,6 +118,79 @@ export function registerGraphCommand(program: Command): void {
 				} else {
 					process.stdout.write(html);
 				}
+			} catch (e) {
+				writeError((e as Error).message);
+			}
+		});
+
+	// ── Absorbed from gap command ──
+
+	cmd
+		.command("gaps")
+		.description("Detect and list knowledge gaps (computed from graph state)")
+		.option("--detect", "Run gap detection")
+		.option("--task <taskId>", "Filter by task ID")
+		.action((opts: { detect?: boolean; task?: string }) => {
+			try {
+				const { services } = getContext();
+				const gaps = services.gap.detectGaps(opts.task);
+				markTaskWorkflow(services, opts.task, [WORKFLOW_ITEMS.synthesizeNextRound]);
+				writeJson(gaps);
+			} catch (e) {
+				writeError((e as Error).message);
+			}
+		});
+
+	// ── Absorbed from report command ──
+
+	cmd
+		.command("report")
+		.description("Generate a report with citations from graph data")
+		.option("--task <taskId>", "Limit to a specific task")
+		.option("--title <title>", "Report title")
+		.option("--format <format>", "Output format: markdown (default) or json", "markdown")
+		.option("--output <file>", "Output file path (default: stdout)")
+		.action(
+			(opts: {
+				task?: string;
+				title?: string;
+				format: string;
+				output?: string;
+			}) => {
+				try {
+					const { services } = getContext();
+					const reportService = services.report;
+
+					if (opts.format === "json") {
+						const report = reportService.generateReport(opts.task, opts.title);
+						if (opts.output) {
+							writeFileSync(opts.output, JSON.stringify(report, null, 2));
+						} else {
+							writeJson(report);
+						}
+					} else {
+						const markdown = reportService.generateMarkdown(opts.task, opts.title);
+						if (opts.output) {
+							writeFileSync(opts.output, markdown, "utf-8");
+						} else {
+							console.log(markdown);
+						}
+					}
+				} catch (e) {
+					writeError((e as Error).message);
+				}
+			},
+		);
+
+	cmd
+		.command("citations")
+		.description("List all citations in the graph")
+		.option("--task <taskId>", "Limit to a specific task")
+		.action((opts: { task?: string }) => {
+			try {
+				const { services } = getContext();
+				const { citations } = services.report.buildCitationMap(opts.task);
+				writeJson({ citations });
 			} catch (e) {
 				writeError((e as Error).message);
 			}

@@ -8,8 +8,7 @@ import type {
 } from "../models/types";
 import type { GraphStore } from "../../storage/graph-store";
 import type { GraphService } from "./graph-service";
-import type { ClaimService } from "./claim-service";
-import type { QuestionService } from "./question-service";
+import type { PropositionService } from "./proposition-service";
 import type { GapService } from "./gap-service";
 import type { EvidenceService } from "./evidence-service";
 import type { TaskChecklistService } from "./task-checklist-service";
@@ -32,8 +31,7 @@ export class LlmTaskService {
 	constructor(
 		private store: GraphStore,
 		private graphService: GraphService,
-		private claimService: ClaimService,
-		private questionService: QuestionService,
+		private propositionService: PropositionService,
 		private gapService: GapService,
 		private evidenceService: EvidenceService,
 		private taskChecklistService: TaskChecklistService,
@@ -43,9 +41,9 @@ export class LlmTaskService {
 		task: Task | null;
 		taskChecklist: TaskChecklist | null;
 		focusNodes: BaseNode[];
-		relatedClaims: BaseNode[];
+		relatedPropositions: BaseNode[];
 		relatedEvidence: BaseNode[];
-		openQuestions: BaseNode[];
+		openPropositions: BaseNode[];
 	} {
 		const task = taskId ? this.store.getTask(taskId) ?? null : null;
 		const taskChecklist = taskId
@@ -54,11 +52,11 @@ export class LlmTaskService {
 		const focusNodes = taskId
 			? this.graphService.listNodes({ taskId })
 			: this.store.listNodes();
-		const relatedClaims = focusNodes.filter((n) => n.kind === "Claim");
-		const relatedEvidence = focusNodes.filter((n) => n.kind === "Evidence");
-		const openQuestions = this.questionService.listQuestions({ status: "open", taskId });
+		const relatedPropositions = focusNodes.filter((n) => n.type === "Proposition");
+		const relatedEvidence = focusNodes.filter((n) => n.type === "Evidence");
+		const openPropositions = this.propositionService.listPropositions({ status: "open", taskId });
 
-		return { task, taskChecklist, focusNodes, relatedClaims, relatedEvidence, openQuestions };
+		return { task, taskChecklist, focusNodes, relatedPropositions, relatedEvidence, openPropositions };
 	}
 
 	private buildWorkflowChecklistContext(taskChecklist: TaskChecklist | null): Record<string, unknown> | undefined {
@@ -126,13 +124,12 @@ export class LlmTaskService {
 	buildExtractEntitiesTask(sourceId: string, taskId?: string): LlmTaskEnvelope {
 		const source = this.store.getNode(sourceId);
 		if (!source) throw new Error(`来源节点不存在: ${sourceId}`);
-		if (source.kind !== "Source") throw new Error(`节点 ${sourceId} 不是 Source 类型`);
+		if (source.type !== "Source") throw new Error(`节点 ${sourceId} 不是 Source 类型`);
 
 		const ctx = this.buildBaseContext(taskId);
-		const existingEntities = ctx.focusNodes.filter((n) => n.kind === "Entity");
+		const existingEntities = ctx.focusNodes.filter((n) => n.type === "Entity");
 
-		// Collect known schema
-		const entityTypes = [...new Set(existingEntities.map((n) => n.type).filter(Boolean) as string[])];
+		const entityTypes = [...new Set(existingEntities.map((n) => (n.attrs?.entityType as string) ?? "").filter(Boolean))];
 		const predicates = [...new Set(this.store.listEdges().map((e) => e.type))];
 
 		const promptCtx: PromptTemplateContext = {
@@ -141,7 +138,7 @@ export class LlmTaskService {
 			focusNodes: existingEntities,
 			knownSchema: {
 				entityTypes,
-				claimTypes: [],
+				propositionTypes: [],
 				predicates,
 			},
 		};
@@ -173,11 +170,11 @@ export class LlmTaskService {
 	buildExtractObservationsTask(sourceId: string, taskId?: string): LlmTaskEnvelope {
 		const source = this.store.getNode(sourceId);
 		if (!source) throw new Error(`来源节点不存在: ${sourceId}`);
-		if (source.kind !== "Source") throw new Error(`节点 ${sourceId} 不是 Source 类型`);
+		if (source.type !== "Source") throw new Error(`节点 ${sourceId} 不是 Source 类型`);
 
 		const ctx = this.buildBaseContext(taskId);
-		const existingEntities = ctx.focusNodes.filter((n) => n.kind === "Entity");
-		const existingObservations = ctx.focusNodes.filter((n) => n.kind === "Observation");
+		const existingEntities = ctx.focusNodes.filter((n) => n.type === "Entity");
+		const existingObservations = ctx.focusNodes.filter((n) => n.type === "Proposition" && n.status === "unrefined");
 
 		const promptCtx: PromptTemplateContext = {
 			...ctx,
@@ -212,21 +209,15 @@ export class LlmTaskService {
 	buildExtractClaimsTask(sourceId: string, taskId?: string): LlmTaskEnvelope {
 		const source = this.store.getNode(sourceId);
 		if (!source) throw new Error(`来源节点不存在: ${sourceId}`);
-		if (source.kind !== "Source") throw new Error(`节点 ${sourceId} 不是 Source 类型`);
+		if (source.type !== "Source") throw new Error(`节点 ${sourceId} 不是 Source 类型`);
 
 		const ctx = this.buildBaseContext(taskId);
-		const existingClaims = ctx.relatedClaims;
-		const claimTypes = [...new Set(existingClaims.map((n) => n.attrs?.claimType as string).filter(Boolean))];
+		const existingClaims = ctx.relatedPropositions.filter((n) => n.status !== "unrefined" && n.status !== "open");
 
 		const promptCtx: PromptTemplateContext = {
 			...ctx,
 			source,
 			focusNodes: existingClaims,
-			knownSchema: {
-				entityTypes: [],
-				claimTypes,
-				predicates: [],
-			},
 		};
 
 		return this.buildEnvelope(
@@ -248,14 +239,14 @@ export class LlmTaskService {
 			buildExtractClaimsPrompt(promptCtx),
 			extractClaimsSchema(),
 			{
-				suggestedCommand: "kg claim add --json-in - --dir <dir>",
+				suggestedCommand: "kg node upsert --json-in - --dir <dir>",
 			},
 		);
 	}
 
 	buildNormalizeEntitiesTask(taskId?: string): LlmTaskEnvelope {
 		const ctx = this.buildBaseContext(taskId);
-		const entities = ctx.focusNodes.filter((n) => n.kind === "Entity");
+		const entities = ctx.focusNodes.filter((n) => n.type === "Entity");
 
 		const promptCtx: PromptTemplateContext = {
 			...ctx,
@@ -285,7 +276,7 @@ export class LlmTaskService {
 
 	buildNormalizeClaimsTask(taskId?: string): LlmTaskEnvelope {
 		const ctx = this.buildBaseContext(taskId);
-		const claims = ctx.relatedClaims;
+		const claims = ctx.relatedPropositions.filter((n) => n.status !== "unrefined" && n.status !== "open");
 
 		const promptCtx: PromptTemplateContext = {
 			...ctx,
@@ -308,7 +299,7 @@ export class LlmTaskService {
 			buildNormalizeClaimsPrompt(promptCtx),
 			normalizeClaimsSchema(),
 			{
-				suggestedCommand: "kg claim merge <keptId> <removedId> --dir <dir>",
+				suggestedCommand: "kg node merge <keptId> <removedId> --dir <dir>",
 			},
 		);
 	}
@@ -325,19 +316,19 @@ export class LlmTaskService {
 			taskId,
 			ctx.taskChecklist,
 			{
-				relatedNodes: [...ctx.relatedClaims, ...ctx.openQuestions],
+				relatedNodes: [...ctx.relatedPropositions, ...ctx.openPropositions],
 				relatedEdges: [],
 				relatedEvidence: ctx.relatedEvidence,
 			},
 			{
-				existingClaimCount: ctx.relatedClaims.length,
-				existingQuestionCount: ctx.openQuestions.length,
+				existingClaimCount: ctx.relatedPropositions.length,
+				existingQuestionCount: ctx.openPropositions.length,
 			},
 			"基于当前知识图谱生成新的研究问题",
 			buildGenerateQuestionsPrompt(promptCtx),
 			generateQuestionsSchema(),
 			{
-				suggestedCommand: "kg question add --json-in - --dir <dir>",
+				suggestedCommand: "kg node upsert --json-in - --dir <dir>",
 			},
 		);
 	}
@@ -354,27 +345,27 @@ export class LlmTaskService {
 			taskId,
 			ctx.taskChecklist,
 			{
-				relatedNodes: [...ctx.relatedClaims, ...ctx.openQuestions],
+				relatedNodes: [...ctx.relatedPropositions, ...ctx.openPropositions],
 				relatedEdges: [],
 				relatedEvidence: ctx.relatedEvidence,
 			},
 			{
-				claimCount: ctx.relatedClaims.length,
+				claimCount: ctx.relatedPropositions.length,
 				evidenceCount: ctx.relatedEvidence.length,
-				questionCount: ctx.openQuestions.length,
+				questionCount: ctx.openPropositions.length,
 			},
 			"基于当前知识图谱生成假设",
 			buildGenerateHypothesesPrompt(promptCtx),
 			generateHypothesesSchema(),
 			{
-				suggestedCommand: "kg hypothesis add --json-in - --dir <dir>",
+				suggestedCommand: "kg node upsert --json-in - --dir <dir>",
 			},
 		);
 	}
 
 	buildNextSearchQueriesTask(taskId?: string): LlmTaskEnvelope {
 		const ctx = this.buildBaseContext(taskId);
-		const gaps = this.gapService.listGaps({ taskId, status: "open" });
+		const gaps = this.gapService.detectGaps(taskId);
 
 		const promptCtx: PromptTemplateContext = {
 			...ctx,
@@ -385,16 +376,16 @@ export class LlmTaskService {
 			taskId,
 			ctx.taskChecklist,
 			{
-				relatedNodes: [...ctx.relatedClaims, ...ctx.openQuestions, ...gaps],
+				relatedNodes: [...ctx.relatedPropositions, ...ctx.openPropositions],
 				relatedEdges: [],
 				relatedEvidence: ctx.relatedEvidence,
 			},
 			{
-				openQuestionCount: ctx.openQuestions.length,
+				openQuestionCount: ctx.openPropositions.length,
 				gapCount: gaps.length,
-				unsupportedClaimCount: ctx.relatedClaims.filter((c) => {
-					const links = this.store.listEvidenceLinks(
-						(l) => l.targetId === c.id && l.targetType === "node",
+				unsupportedClaimCount: ctx.relatedPropositions.filter((c) => {
+					const links = this.store.listEdges(
+						(e) => e.type === "evidence_link" && e.toId === c.id,
 					);
 					return links.length === 0;
 				}).length,
@@ -408,20 +399,20 @@ export class LlmTaskService {
 		);
 	}
 
-	buildAssessEvidenceTask(claimId: string): LlmTaskEnvelope {
-		const claim = this.claimService.getClaim(claimId);
-		if (!claim) throw new Error(`断言不存在: ${claimId}`);
+	buildAssessEvidenceTask(propositionId: string): LlmTaskEnvelope {
+		const proposition = this.propositionService.getProposition(propositionId);
+		if (!proposition) throw new Error(`命题不存在: ${propositionId}`);
 
-		const { evidence, links } = this.evidenceService.listEvidenceByTarget(claimId);
-		const relatedClaims = this.store
-			.listEdges((e) => e.fromId === claimId || e.toId === claimId)
+		const { evidence, links } = this.evidenceService.listEvidenceByTarget(propositionId);
+		const relatedPropositions = this.store
+			.listEdges((e) => (e.fromId === propositionId || e.toId === propositionId) && e.type !== "evidence_link")
 			.map((edge) => {
-				const otherId = edge.fromId === claimId ? edge.toId : edge.fromId;
+				const otherId = edge.fromId === propositionId ? edge.toId : edge.fromId;
 				return this.store.getNode(otherId);
 			})
-			.filter((n): n is BaseNode => n !== undefined && n.kind === "Claim");
+			.filter((n): n is BaseNode => n !== undefined && n.type === "Proposition");
 
-		const taskIds = this.store.getNodeTaskIds(claimId);
+		const taskIds = this.store.getNodeTaskIds(propositionId);
 		const task = taskIds.length > 0 ? this.store.getTask(taskIds[0]) ?? null : null;
 
 		const taskChecklist = task?.id
@@ -431,8 +422,8 @@ export class LlmTaskService {
 		const promptCtx: PromptTemplateContext = {
 			task,
 			taskChecklist,
-			focusNodes: [claim, ...relatedClaims],
-			relatedClaims,
+			focusNodes: [proposition, ...relatedPropositions],
+			relatedPropositions,
 			relatedEvidence: evidence,
 		};
 
@@ -441,24 +432,24 @@ export class LlmTaskService {
 			task?.id,
 			taskChecklist,
 			{
-				focusNodeIds: [claimId],
-				relatedNodes: relatedClaims,
+				focusNodeIds: [propositionId],
+				relatedNodes: relatedPropositions,
 				relatedEdges: [],
 				relatedEvidence: evidence,
 			},
 			{
-				claimId,
-				claimText: claim.text,
+				propositionId,
+				propositionText: proposition.text,
 				evidenceCount: evidence.length,
 				linkCount: links.length,
-				supportCount: links.filter((l) => l.role === "supports").length,
-				contradictCount: links.filter((l) => l.role === "contradicts").length,
+				supportCount: links.filter((l) => l.attrs?.role === "supports").length,
+				contradictCount: links.filter((l) => l.attrs?.role === "contradicts").length,
 			},
-			`评估断言 "${claim.text ?? claim.title ?? claimId}" 的证据状况`,
+			`评估命题 "${proposition.text ?? proposition.title ?? propositionId}" 的证据状况`,
 			buildAssessEvidencePrompt(promptCtx),
 			assessEvidenceSchema(),
 			{
-				suggestedCommand: "kg claim set-status <claimId> <status> --dir <dir>",
+				suggestedCommand: "kg node set-status <propositionId> <status> --dir <dir>",
 			},
 		);
 	}
@@ -473,7 +464,7 @@ export class LlmTaskService {
 			relatedEdges: edges,
 			knownSchema: {
 				entityTypes: [],
-				claimTypes: [],
+				propositionTypes: [],
 				predicates,
 			},
 		};
@@ -503,10 +494,10 @@ export class LlmTaskService {
 	buildExtractRelationsTask(sourceId: string, taskId?: string): LlmTaskEnvelope {
 		const source = this.store.getNode(sourceId);
 		if (!source) throw new Error(`来源节点不存在: ${sourceId}`);
-		if (source.kind !== "Source") throw new Error(`节点 ${sourceId} 不是 Source 类型`);
+		if (source.type !== "Source") throw new Error(`节点 ${sourceId} 不是 Source 类型`);
 
 		const ctx = this.buildBaseContext(taskId);
-		const existingEntities = ctx.focusNodes.filter((n) => n.kind === "Entity");
+		const existingEntities = ctx.focusNodes.filter((n) => n.type === "Entity");
 		const predicates = [...new Set(this.store.listEdges().map((e) => e.type))];
 
 		const promptCtx: PromptTemplateContext = {
@@ -514,8 +505,8 @@ export class LlmTaskService {
 			source,
 			focusNodes: existingEntities,
 			knownSchema: {
-				entityTypes: [...new Set(existingEntities.map((n) => n.type).filter(Boolean) as string[])],
-				claimTypes: [],
+				entityTypes: [...new Set(existingEntities.map((n) => (n.attrs?.entityType as string) ?? "").filter(Boolean))],
+				propositionTypes: [],
 				predicates,
 			},
 		};
@@ -548,14 +539,14 @@ export class LlmTaskService {
 		const ctx = this.buildBaseContext(taskId);
 		const scopedNodes = taskId ? ctx.focusNodes : this.store.listNodes();
 
-		// Get all claims with their evidence chains
-		const claims = scopedNodes.filter((n) => n.kind === "Claim");
-		const claimsWithEvidence = claims.map((claim) => {
-			const evidenceLinks = this.store.listEvidenceLinks(
-				(l) => l.targetId === claim.id && l.targetType === "node" && l.role === "supports",
+		// Get all propositions (not unrefined/open)
+		const propositions = scopedNodes.filter((n) => n.type === "Proposition");
+		const propositionsWithEvidence = propositions.map((prop) => {
+			const evidenceLinks = this.store.listEdges(
+				(e) => e.type === "evidence_link" && e.toId === prop.id && e.attrs?.role === "supports",
 			);
 			const evidence = evidenceLinks.map((link) => {
-				const ev = this.store.getNode(link.evidenceId);
+				const ev = this.store.getNode(link.fromId);
 				const sourceId = ev?.attrs?.sourceId as string | undefined;
 				const source = sourceId ? this.store.getNode(sourceId) : null;
 				return {
@@ -563,49 +554,48 @@ export class LlmTaskService {
 					sourceId: sourceId ?? "",
 					sourceTitle: source?.title ?? sourceId ?? "未知来源",
 					sourceUri: source?.attrs?.uri as string | undefined,
-					sourceType: source?.type ?? "unknown",
+					sourceType: (source?.attrs?.sourceType as string) ?? "unknown",
 				};
 			});
 
 			return {
-				id: claim.id,
-				text: claim.text ?? "",
-				status: claim.status ?? "unknown",
-				claimType: claim.attrs?.claimType as string | undefined,
-				confidence: claim.attrs?.confidence as number | undefined,
+				id: prop.id,
+				text: prop.text ?? "",
+				status: prop.status ?? "unknown",
+				confidence: prop.confidence,
 				evidence,
 			};
 		});
 
-		// Get all questions
-		const questions = scopedNodes.filter((n) => n.kind === "Question");
-		const questionList = questions.map((q) => ({
+		// Get open questions
+		const openQuestions = propositions.filter((n) => n.status === "open");
+		const questionList = openQuestions.map((q) => ({
 			id: q.id,
 			text: q.text ?? "",
 			priority: (q.attrs?.priority as number) ?? 0.5,
 			status: q.status ?? "unknown",
 		}));
 
-		// Get all gaps
-		const gaps = this.gapService.listGaps({ taskId, status: "open" });
+		// Detect gaps
+		const gaps = this.gapService.detectGaps(taskId);
 		const gapList = gaps.map((g) => ({
-			id: g.id,
-			text: g.text ?? "",
-			gapType: String(g.attrs?.gapType ?? "unknown"),
-			severity: Number(g.attrs?.severity ?? 0.5),
+			targetId: g.targetId,
+			text: g.description,
+			gapType: g.gapType,
+			severity: g.severity,
 		}));
 
 		// Get all sources
-		const sources = scopedNodes.filter((n) => n.kind === "Source");
+		const sources = scopedNodes.filter((n) => n.type === "Source");
 		const sourceList = sources.map((s) => ({
 			id: s.id,
 			title: s.title ?? s.id,
 			uri: s.attrs?.uri as string | undefined,
-			type: s.type ?? "unknown",
+			type: (s.attrs?.sourceType as string) ?? "unknown",
 		}));
 
 		const reportData = {
-			claims: claimsWithEvidence,
+			claims: propositionsWithEvidence,
 			questions: questionList,
 			gaps: gapList,
 			sources: sourceList,
@@ -618,14 +608,14 @@ export class LlmTaskService {
 			taskId,
 			ctx.taskChecklist,
 			{
-				focusNodeIds: claims.map((c) => c.id),
-				relatedNodes: [...questions, ...gaps],
+				focusNodeIds: propositions.map((c) => c.id),
+				relatedNodes: [...openQuestions],
 				relatedEdges: [],
 				relatedEvidence: [],
 			},
 			{
-				claimsCount: claims.length,
-				questionsCount: questions.length,
+				claimsCount: propositions.length,
+				questionsCount: openQuestions.length,
 				gapsCount: gaps.length,
 				sourcesCount: sources.length,
 			},

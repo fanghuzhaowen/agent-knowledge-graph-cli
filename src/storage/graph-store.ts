@@ -1,23 +1,37 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
-import type { BaseNode, Edge, EvidenceLink, Task, NodeTaskLink, OpLog } from "../core/models/types";
+import type { BaseNode, Edge, Task, NodeTaskLink, OpLog } from "../core/models/types";
+
+/**
+ * Legacy EvidenceLink shape for migration purposes.
+ * @deprecated Use Edge with type "evidence_link" instead.
+ */
+interface LegacyEvidenceLink {
+	id: string;
+	evidenceId: string;
+	targetType: "node" | "edge";
+	targetId: string;
+	role: "supports" | "contradicts" | "mentions" | "qualifies";
+	confidence?: number;
+	createdAt: string;
+}
 
 // ── Graph data structure (single JSON file) ──
 
 export interface GraphData {
 	nodes: Record<string, BaseNode>;
 	edges: Record<string, Edge>;
-	evidenceLinks: Record<string, EvidenceLink>;
 	tasks: Record<string, Task>;
 	nodeTaskLinks: NodeTaskLink[];
 	opLogs: OpLog[];
+	/** @deprecated Legacy evidenceLinks — migrated to edges with type "evidence_link" */
+	evidenceLinks?: Record<string, LegacyEvidenceLink>;
 }
 
 export function emptyGraphData(): GraphData {
 	return {
 		nodes: {},
 		edges: {},
-		evidenceLinks: {},
 		tasks: {},
 		nodeTaskLinks: [],
 		opLogs: [],
@@ -36,11 +50,48 @@ export class GraphStore {
 		if (existsSync(this.filePath)) {
 			const raw = readFileSync(this.filePath, "utf-8");
 			this.data = JSON.parse(raw) as GraphData;
+			this.migrateEvidenceLinks();
 		} else {
 			mkdirSync(dir, { recursive: true });
 			this.data = emptyGraphData();
 			this.dirty = true;
 		}
+	}
+
+	/**
+	 * Migrate legacy evidenceLinks to edges with type "evidence_link".
+	 * Called once on load if legacy data is present.
+	 */
+	private migrateEvidenceLinks(): void {
+		if (!this.data.evidenceLinks || Object.keys(this.data.evidenceLinks).length === 0) {
+			return;
+		}
+
+		for (const link of Object.values(this.data.evidenceLinks)) {
+			const edge: Edge = {
+				id: link.id,
+				type: "evidence_link",
+				fromId: link.evidenceId,
+				toId: link.targetId,
+				directed: true,
+				confidence: link.confidence,
+				attrs: {
+					role: link.role,
+					targetType: link.targetType,
+				},
+				createdAt: link.createdAt,
+				updatedAt: link.createdAt,
+			};
+			// Only migrate if not already present
+			if (!this.data.edges[edge.id]) {
+				this.data.edges[edge.id] = edge;
+			}
+		}
+
+		// Remove legacy data
+		delete this.data.evidenceLinks;
+		this.dirty = true;
+		this.save();
 	}
 
 	// ── Persistence ──
@@ -76,15 +127,10 @@ export class GraphStore {
 	deleteNode(id: string): boolean {
 		if (!(id in this.data.nodes)) return false;
 		delete this.data.nodes[id];
-		// cascade: remove related edges, evidence links, node-task links
+		// cascade: remove related edges and node-task links
 		for (const [eid, edge] of Object.entries(this.data.edges)) {
 			if (edge.fromId === id || edge.toId === id) {
 				delete this.data.edges[eid];
-			}
-		}
-		for (const [lid, link] of Object.entries(this.data.evidenceLinks)) {
-			if (link.evidenceId === id || link.targetId === id) {
-				delete this.data.evidenceLinks[lid];
 			}
 		}
 		this.data.nodeTaskLinks = this.data.nodeTaskLinks.filter((l) => l.nodeId !== id);
@@ -116,36 +162,6 @@ export class GraphStore {
 	deleteEdge(id: string): boolean {
 		if (!(id in this.data.edges)) return false;
 		delete this.data.edges[id];
-		// cascade: remove evidence links pointing to this edge
-		for (const [lid, link] of Object.entries(this.data.evidenceLinks)) {
-			if (link.targetId === id && link.targetType === "edge") {
-				delete this.data.evidenceLinks[lid];
-			}
-		}
-		this.dirty = true;
-		return true;
-	}
-
-	// ── Evidence Links ──
-
-	getEvidenceLink(id: string): EvidenceLink | undefined {
-		return this.data.evidenceLinks[id];
-	}
-
-	createEvidenceLink(link: EvidenceLink): EvidenceLink {
-		this.data.evidenceLinks[link.id] = link;
-		this.dirty = true;
-		return link;
-	}
-
-	listEvidenceLinks(predicate?: (l: EvidenceLink) => boolean): EvidenceLink[] {
-		const all = Object.values(this.data.evidenceLinks);
-		return predicate ? all.filter(predicate) : all;
-	}
-
-	deleteEvidenceLink(id: string): boolean {
-		if (!(id in this.data.evidenceLinks)) return false;
-		delete this.data.evidenceLinks[id];
 		this.dirty = true;
 		return true;
 	}

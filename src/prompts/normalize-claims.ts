@@ -1,7 +1,7 @@
 import type { PromptTemplateContext } from "../core/models/types";
 
 export function buildPrompt(ctx: PromptTemplateContext): string {
-	const claims = (ctx.focusNodes ?? []).filter((n) => n.kind === "Claim");
+	const claims = (ctx.focusNodes ?? []).filter((n) => n.type === "Proposition");
 
 	const claimList = claims
 		.map((n) => `- [${n.id}] "${n.text ?? n.summary ?? n.id}" (类型: ${n.attrs?.claimType ?? "未分类"}, 状态: ${n.status ?? "未知"}, 置信度: ${n.confidence ?? "未评估"})`)

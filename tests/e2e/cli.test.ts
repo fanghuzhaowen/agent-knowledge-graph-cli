@@ -41,14 +41,11 @@ describeE2E("CLI E2E", () => {
 	it("should create a new topic", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
-		// new-topic creates a directory under <cwd>/temp/<topic>_<timestamp>
-		// It does not take --dir; it takes the topic name as a positional argument
 		const result = exec('new-topic "测试主题"', tempDir);
 		expect(result.exitCode).toBe(0);
 
 		const output = JSON.parse(result.stdout);
 		expect(output.dir).toBeDefined();
-		// Verify kg.json exists in the created directory
 		expect(existsSync(join(output.dir, "kg.json"))).toBe(true);
 		expect(existsSync(output.tasksFile)).toBe(true);
 		expect(existsSync(join(output.dir, "search_results"))).toBe(true);
@@ -61,11 +58,9 @@ describeE2E("CLI E2E", () => {
 	it("should create a task", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
-		// Create a topic first
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// task create (not task add) with --title and --goal
 		const result = exec(
 			`task create --title "Research Task" --goal "Investigate claims" --dir "${topicDir}"`,
 			tempDir,
@@ -82,12 +77,11 @@ describeE2E("CLI E2E", () => {
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// node upsert reads from stdin via --json-in
 		const jsonFilePath = join(tempDir, "node-data.json");
 		writeFileSync(jsonFilePath, JSON.stringify({
-			kind: "Entity",
-			type: "Person",
+			type: "Entity",
 			title: "OpenAI",
+			attrs: { entityType: "Organization" },
 		}));
 
 		const result = exec(
@@ -103,16 +97,15 @@ describeE2E("CLI E2E", () => {
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// Create two entities first via node upsert with --json-in
 		const e1JsonPath = join(tempDir, "e1.json");
-		writeFileSync(e1JsonPath, JSON.stringify({ kind: "Entity", type: "Person", title: "A" }));
+		writeFileSync(e1JsonPath, JSON.stringify({ type: "Entity", title: "A", attrs: { entityType: "Person" } }));
 		const e1 = exec(
 			`node upsert --json-in "${e1JsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 
 		const e2JsonPath = join(tempDir, "e2.json");
-		writeFileSync(e2JsonPath, JSON.stringify({ kind: "Entity", type: "Person", title: "B" }));
+		writeFileSync(e2JsonPath, JSON.stringify({ type: "Entity", title: "B", attrs: { entityType: "Person" } }));
 		const e2 = exec(
 			`node upsert --json-in "${e2JsonPath}" --dir "${topicDir}"`,
 			tempDir,
@@ -121,7 +114,6 @@ describeE2E("CLI E2E", () => {
 		const id1 = JSON.parse(e1.stdout).id;
 		const id2 = JSON.parse(e2.stdout).id;
 
-		// edge create uses --from, --to, --type
 		const result = exec(
 			`edge create --from ${id1} --to ${id2} --type related_to --dir "${topicDir}"`,
 			tempDir,
@@ -136,10 +128,9 @@ describeE2E("CLI E2E", () => {
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
 		const jsonPath = join(tempDir, "entity.json");
-		writeFileSync(jsonPath, JSON.stringify({ kind: "Entity", type: "Person", title: "OpenAI" }));
+		writeFileSync(jsonPath, JSON.stringify({ type: "Entity", title: "OpenAI", attrs: { entityType: "Organization" } }));
 		exec(`node upsert --json-in "${jsonPath}" --dir "${topicDir}"`, tempDir);
 
-		// node list with --kind filter
 		const result = exec(`node list --kind Entity --dir "${topicDir}"`, tempDir);
 		expect(result.exitCode).toBe(0);
 		const output = JSON.parse(result.stdout);
@@ -153,14 +144,14 @@ describeE2E("CLI E2E", () => {
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
 		const e1JsonPath = join(tempDir, "e1.json");
-		writeFileSync(e1JsonPath, JSON.stringify({ kind: "Entity", type: "Person", title: "A" }));
+		writeFileSync(e1JsonPath, JSON.stringify({ type: "Entity", title: "A", attrs: { entityType: "Person" } }));
 		const e1 = exec(
 			`node upsert --json-in "${e1JsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 
 		const e2JsonPath = join(tempDir, "e2.json");
-		writeFileSync(e2JsonPath, JSON.stringify({ kind: "Entity", type: "Person", title: "B" }));
+		writeFileSync(e2JsonPath, JSON.stringify({ type: "Entity", title: "B", attrs: { entityType: "Person" } }));
 		const e2 = exec(
 			`node upsert --json-in "${e2JsonPath}" --dir "${topicDir}"`,
 			tempDir,
@@ -176,21 +167,21 @@ describeE2E("CLI E2E", () => {
 		expect(output.length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("should create a Source", () => {
+	it("should create a Source via node upsert", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// source add reads from stdin via --json-in
 		const jsonPath = join(tempDir, "source.json");
 		writeFileSync(jsonPath, JSON.stringify({
+			type: "Source",
 			title: "Test Source",
-			sourceType: "webpage",
+			attrs: { sourceType: "webpage" },
 		}));
 
 		const result = exec(
-			`source add --json-in "${jsonPath}" --dir "${topicDir}"`,
+			`node upsert --json-in "${jsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(result.exitCode).toBe(0);
@@ -202,16 +193,14 @@ describeE2E("CLI E2E", () => {
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// Create source first
 		const srcJsonPath = join(tempDir, "source.json");
-		writeFileSync(srcJsonPath, JSON.stringify({ title: "Test Source", sourceType: "webpage" }));
+		writeFileSync(srcJsonPath, JSON.stringify({ type: "Source", title: "Test Source", attrs: { sourceType: "webpage" } }));
 		const src = exec(
-			`source add --json-in "${srcJsonPath}" --dir "${topicDir}"`,
+			`node upsert --json-in "${srcJsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		const srcId = JSON.parse(src.stdout).id;
 
-		// evidence add reads from stdin via --json-in
 		const evJsonPath = join(tempDir, "evidence.json");
 		writeFileSync(evJsonPath, JSON.stringify({
 			sourceId: srcId,
@@ -231,16 +220,14 @@ describeE2E("CLI E2E", () => {
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// Create source
 		const srcJsonPath = join(tempDir, "source.json");
-		writeFileSync(srcJsonPath, JSON.stringify({ title: "Test Source", sourceType: "webpage" }));
+		writeFileSync(srcJsonPath, JSON.stringify({ type: "Source", title: "Test Source", attrs: { sourceType: "webpage" } }));
 		const src = exec(
-			`source add --json-in "${srcJsonPath}" --dir "${topicDir}"`,
+			`node upsert --json-in "${srcJsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		const srcId = JSON.parse(src.stdout).id;
 
-		// Create evidence
 		const evJsonPath = join(tempDir, "evidence.json");
 		writeFileSync(evJsonPath, JSON.stringify({ sourceId: srcId, snippet: "Evidence text" }));
 		const ev = exec(
@@ -249,16 +236,14 @@ describeE2E("CLI E2E", () => {
 		);
 		const evId = JSON.parse(ev.stdout).id;
 
-		// Create entity
 		const entJsonPath = join(tempDir, "entity.json");
-		writeFileSync(entJsonPath, JSON.stringify({ kind: "Entity", type: "Person", title: "A" }));
+		writeFileSync(entJsonPath, JSON.stringify({ type: "Entity", title: "A", attrs: { entityType: "Person" } }));
 		const ent = exec(
 			`node upsert --json-in "${entJsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		const entId = JSON.parse(ent.stdout).id;
 
-		// evidence link uses --evidence, --target, --role
 		const result = exec(
 			`evidence link --evidence ${evId} --target ${entId} --role supports --dir "${topicDir}"`,
 			tempDir,
@@ -266,58 +251,54 @@ describeE2E("CLI E2E", () => {
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should create a Claim", () => {
+	it("should create a Proposition via node upsert", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// claim add reads from stdin via --json-in
-		const jsonPath = join(tempDir, "claim.json");
-		writeFileSync(jsonPath, JSON.stringify({ text: "Test claim" }));
+		const jsonPath = join(tempDir, "proposition.json");
+		writeFileSync(jsonPath, JSON.stringify({ type: "Proposition", text: "Test proposition", status: "asserted" }));
 
 		const result = exec(
-			`claim add --json-in "${jsonPath}" --dir "${topicDir}"`,
+			`node upsert --json-in "${jsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should set Claim status", () => {
+	it("should set Proposition status via node set-status", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// Create claim
-		const jsonPath = join(tempDir, "claim.json");
-		writeFileSync(jsonPath, JSON.stringify({ text: "Test claim" }));
-		const claim = exec(
-			`claim add --json-in "${jsonPath}" --dir "${topicDir}"`,
+		const jsonPath = join(tempDir, "proposition.json");
+		writeFileSync(jsonPath, JSON.stringify({ type: "Proposition", text: "Test proposition", status: "asserted" }));
+		const prop = exec(
+			`node upsert --json-in "${jsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
-		const claimId = JSON.parse(claim.stdout).id;
+		const propId = JSON.parse(prop.stdout).id;
 
-		// claim set-status takes <id> <status> as positional args
 		const result = exec(
-			`claim set-status ${claimId} supported --dir "${topicDir}"`,
+			`node set-status ${propId} supported --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(result.exitCode).toBe(0);
 	});
 
-	it("should create a Question", () => {
+	it("should create a Question as Proposition with status open", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// question add reads from stdin via --json-in
 		const jsonPath = join(tempDir, "question.json");
-		writeFileSync(jsonPath, JSON.stringify({ text: "What is the evidence?" }));
+		writeFileSync(jsonPath, JSON.stringify({ type: "Proposition", text: "What is the evidence?", status: "open" }));
 
 		const result = exec(
-			`question add --json-in "${jsonPath}" --dir "${topicDir}"`,
+			`node upsert --json-in "${jsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(result.exitCode).toBe(0);
@@ -330,7 +311,7 @@ describeE2E("CLI E2E", () => {
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
 		const jsonPath = join(tempDir, "entity.json");
-		writeFileSync(jsonPath, JSON.stringify({ kind: "Entity", type: "Person", title: "A" }));
+		writeFileSync(jsonPath, JSON.stringify({ type: "Entity", title: "A", attrs: { entityType: "Person" } }));
 		exec(`node upsert --json-in "${jsonPath}" --dir "${topicDir}"`, tempDir);
 
 		const result = exec(`graph stats --dir "${topicDir}"`, tempDir);
@@ -355,16 +336,14 @@ describeE2E("CLI E2E", () => {
 		const topicResult = exec('new-topic "Test Topic"', tempDir);
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
-		// Create a source first
 		const srcJsonPath = join(tempDir, "source.json");
-		writeFileSync(srcJsonPath, JSON.stringify({ title: "Test Source", sourceType: "webpage" }));
+		writeFileSync(srcJsonPath, JSON.stringify({ type: "Source", title: "Test Source", attrs: { sourceType: "webpage" } }));
 		const src = exec(
-			`source add --json-in "${srcJsonPath}" --dir "${topicDir}"`,
+			`node upsert --json-in "${srcJsonPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		const srcId = JSON.parse(src.stdout).id;
 
-		// llm extract-entities uses --source
 		const result = exec(
 			`llm extract-entities --source ${srcId} --dir "${topicDir}"`,
 			tempDir,
@@ -389,7 +368,7 @@ describeE2E("CLI E2E", () => {
 		expect(output.taskType).toBe("generate_questions");
 	});
 
-	it("should link a created claim to a task and allow task-scoped listing", () => {
+	it("should link a created proposition to a task and allow task-scoped listing via node list", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
 		const topicResult = exec('new-topic "Task Topic"', tempDir);
@@ -397,22 +376,24 @@ describeE2E("CLI E2E", () => {
 		const topicDir = topic.dir;
 		const taskId = topic.taskId;
 
-		const claimPath = join(tempDir, "task-claim.json");
+		const propPath = join(tempDir, "task-proposition.json");
 		writeFileSync(
-			claimPath,
+			propPath,
 			JSON.stringify({
-				text: "This claim is intentionally long enough to be easy to identify and should remain visible when filtering by the linked task identifier.",
+				type: "Proposition",
+				text: "This proposition is intentionally long enough to be easy to identify and should remain visible when filtering by the linked task identifier.",
+				status: "asserted",
 			}),
 		);
 
 		const createResult = exec(
-			`claim add --task ${taskId} --json-in "${claimPath}" --dir "${topicDir}"`,
+			`node upsert --task ${taskId} --json-in "${propPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(createResult.exitCode).toBe(0);
 
 		const listResult = exec(
-			`claim list --task ${taskId} --dir "${topicDir}"`,
+			`node list --kind Proposition --task ${taskId} --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(listResult.exitCode).toBe(0);
@@ -433,12 +414,13 @@ describeE2E("CLI E2E", () => {
 		writeFileSync(
 			sourcePath,
 			JSON.stringify({
+				type: "Source",
 				title: "Deep Source",
-				sourceType: "webpage",
+				attrs: { sourceType: "webpage" },
 			}),
 		);
 		const sourceResult = exec(
-			`source add --task ${taskId} --json-in "${sourcePath}" --dir "${topicDir}"`,
+			`node upsert --task ${taskId} --json-in "${sourcePath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(sourceResult.exitCode).toBe(0);
@@ -448,12 +430,16 @@ describeE2E("CLI E2E", () => {
 		writeFileSync(
 			updatePath,
 			JSON.stringify({
+				id: sourceId,
+				type: "Source",
+				title: "Deep Source",
 				text: "This is the captured body text that should appear in the extraction task input context.",
 				summary: "Captured summary",
+				attrs: { sourceType: "webpage" },
 			}),
 		);
 		const updateResult = exec(
-			`source update ${sourceId} --json-in "${updatePath}" --dir "${topicDir}"`,
+			`node upsert --json-in "${updatePath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(updateResult.exitCode).toBe(0);
@@ -467,29 +453,6 @@ describeE2E("CLI E2E", () => {
 		expect(output.inputContext.sourceContent).toContain("captured body text");
 	});
 
-	it("should reject invalid source types at runtime", () => {
-		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
-
-		const topicResult = exec('new-topic "Validation Topic"', tempDir);
-		const topicDir = JSON.parse(topicResult.stdout).dir;
-
-		const sourcePath = join(tempDir, "bad-source.json");
-		writeFileSync(
-			sourcePath,
-			JSON.stringify({
-				title: "Bad Source",
-				sourceType: "totally_invalid",
-			}),
-		);
-
-		const result = exec(
-			`source add --json-in "${sourcePath}" --dir "${topicDir}"`,
-			tempDir,
-		);
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain("Invalid Source node");
-	});
-
 	it("should reject invalid evidence link roles at runtime", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
@@ -497,9 +460,9 @@ describeE2E("CLI E2E", () => {
 		const topicDir = JSON.parse(topicResult.stdout).dir;
 
 		const sourcePath = join(tempDir, "source.json");
-		writeFileSync(sourcePath, JSON.stringify({ title: "Test Source", sourceType: "webpage" }));
+		writeFileSync(sourcePath, JSON.stringify({ type: "Source", title: "Test Source", attrs: { sourceType: "webpage" } }));
 		const sourceResult = exec(
-			`source add --json-in "${sourcePath}" --dir "${topicDir}"`,
+			`node upsert --json-in "${sourcePath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		const sourceId = JSON.parse(sourceResult.stdout).id;
@@ -518,28 +481,30 @@ describeE2E("CLI E2E", () => {
 		);
 		const evidenceId = JSON.parse(evidenceResult.stdout).id;
 
-		const claimPath = join(tempDir, "claim.json");
+		const propPath = join(tempDir, "proposition.json");
 		writeFileSync(
-			claimPath,
+			propPath,
 			JSON.stringify({
-				text: "This claim text is long enough to support the invalid link role runtime validation scenario in the CLI.",
+				type: "Proposition",
+				text: "This proposition text is long enough to support the invalid link role runtime validation scenario in the CLI.",
+				status: "asserted",
 			}),
 		);
-		const claimResult = exec(
-			`claim add --json-in "${claimPath}" --dir "${topicDir}"`,
+		const propResult = exec(
+			`node upsert --json-in "${propPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
-		const claimId = JSON.parse(claimResult.stdout).id;
+		const propId = JSON.parse(propResult.stdout).id;
 
 		const result = exec(
-			`evidence link --evidence ${evidenceId} --target ${claimId} --role nonsense --dir "${topicDir}"`,
+			`evidence link --evidence ${evidenceId} --target ${propId} --role nonsense --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stderr).toContain("Invalid evidence link");
 	});
 
-	it("should keep llm report generation scoped to the requested task", () => {
+	it("should keep llm generate-report scoped to the requested task", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
 		const topicResult = exec('new-topic "Report Topic"', tempDir);
@@ -547,15 +512,17 @@ describeE2E("CLI E2E", () => {
 		const topicDir = topic.dir;
 		const taskA = topic.taskId;
 
-		const claimAPath = join(tempDir, "claim-a.json");
+		const propAPath = join(tempDir, "prop-a.json");
 		writeFileSync(
-			claimAPath,
+			propAPath,
 			JSON.stringify({
-				text: "Claim from task A that should remain in the task-scoped report envelope after filtering is applied.",
+				type: "Proposition",
+				text: "Proposition from task A that should remain in the task-scoped report envelope after filtering is applied.",
+				status: "asserted",
 			}),
 		);
 		exec(
-			`claim add --task ${taskA} --json-in "${claimAPath}" --dir "${topicDir}"`,
+			`node upsert --task ${taskA} --json-in "${propAPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 
@@ -565,15 +532,17 @@ describeE2E("CLI E2E", () => {
 		);
 		const taskB = JSON.parse(taskBResult.stdout).id;
 
-		const claimBPath = join(tempDir, "claim-b.json");
+		const propBPath = join(tempDir, "prop-b.json");
 		writeFileSync(
-			claimBPath,
+			propBPath,
 			JSON.stringify({
-				text: "Claim from task B that should be excluded when generating a report for task A.",
+				type: "Proposition",
+				text: "Proposition from task B that should be excluded when generating a report for task A.",
+				status: "asserted",
 			}),
 		);
 		exec(
-			`claim add --task ${taskB} --json-in "${claimBPath}" --dir "${topicDir}"`,
+			`node upsert --task ${taskB} --json-in "${propBPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 
@@ -639,7 +608,7 @@ describeE2E("CLI E2E", () => {
 		const tasksFile = topic.tasksFile;
 
 		const continueResult = exec(
-			`research continue --task ${taskId} --dir "${topicDir}"`,
+			`task continue ${taskId} --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(continueResult.exitCode).toBe(0);
@@ -681,7 +650,7 @@ describeE2E("CLI E2E", () => {
 		expect(markdown).toContain("## Pages");
 	});
 
-	it("should append round plans to tasks.md when continuing research", () => {
+	it("should append round plans to tasks.md when continuing research via task continue", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "kg-e2e-"));
 
 		const topicResult = exec('new-topic "Research Continue Topic"', tempDir);
@@ -691,7 +660,7 @@ describeE2E("CLI E2E", () => {
 		const tasksFile = topic.tasksFile;
 
 		const firstResult = exec(
-			`research continue --task ${taskId} --dir "${topicDir}"`,
+			`task continue ${taskId} --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(firstResult.exitCode).toBe(0);
@@ -706,7 +675,7 @@ describeE2E("CLI E2E", () => {
 		);
 
 		const secondResult = exec(
-			`research continue --task ${taskId} --dir "${topicDir}"`,
+			`task continue ${taskId} --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(secondResult.exitCode).toBe(0);
@@ -727,7 +696,7 @@ describeE2E("CLI E2E", () => {
 		const taskId = topic.taskId;
 
 		const continueResult = exec(
-			`research continue --task ${taskId} --dir "${topicDir}"`,
+			`task continue ${taskId} --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(continueResult.exitCode).toBe(0);
@@ -736,39 +705,44 @@ describeE2E("CLI E2E", () => {
 		writeFileSync(
 			sourcePath,
 			JSON.stringify({
+				type: "Source",
 				title: "Auto Workflow Source",
-				sourceType: "webpage",
 				text: "Captured page content that should complete the source collection step for the active task.",
+				attrs: { sourceType: "webpage" },
 			}),
 		);
 		const sourceResult = exec(
-			`source add --task ${taskId} --json-in "${sourcePath}" --dir "${topicDir}"`,
+			`node upsert --task ${taskId} --json-in "${sourcePath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(sourceResult.exitCode).toBe(0);
 
-		const claimPath = join(tempDir, "auto-claim.json");
+		const propPath = join(tempDir, "auto-proposition.json");
 		writeFileSync(
-			claimPath,
+			propPath,
 			JSON.stringify({
-				text: "This task-scoped claim is long enough to count as extracted knowledge and should advance both extraction and graph writing workflow items.",
+				type: "Proposition",
+				text: "This task-scoped proposition is long enough to count as extracted knowledge and should advance both extraction and graph writing workflow items.",
+				status: "asserted",
 			}),
 		);
-		const claimResult = exec(
-			`claim add --task ${taskId} --json-in "${claimPath}" --dir "${topicDir}"`,
+		const propResult = exec(
+			`node upsert --task ${taskId} --json-in "${propPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
-		expect(claimResult.exitCode).toBe(0);
+		expect(propResult.exitCode).toBe(0);
 
 		const questionPath = join(tempDir, "auto-question.json");
 		writeFileSync(
 			questionPath,
 			JSON.stringify({
+				type: "Proposition",
 				text: "What contradictory evidence still needs to be collected for this task?",
+				status: "open",
 			}),
 		);
 		const questionResult = exec(
-			`question add --task ${taskId} --json-in "${questionPath}" --dir "${topicDir}"`,
+			`node upsert --task ${taskId} --json-in "${questionPath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(questionResult.exitCode).toBe(0);
@@ -780,7 +754,7 @@ describeE2E("CLI E2E", () => {
 		expect(lintResult.exitCode).toBe(0);
 
 		const gapResult = exec(
-			`gap detect --task ${taskId} --dir "${topicDir}"`,
+			`graph gaps --detect --task ${taskId} --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(gapResult.exitCode).toBe(0);
@@ -817,14 +791,15 @@ describeE2E("CLI E2E", () => {
 		writeFileSync(
 			sourcePath,
 			JSON.stringify({
+				type: "Source",
 				title: "Workflow Source",
-				sourceType: "webpage",
 				text: "This source is used to verify that workflow checklist context is injected into llm task envelopes.",
+				attrs: { sourceType: "webpage" },
 			}),
 		);
 
 		const sourceResult = exec(
-			`source add --task ${taskId} --json-in "${sourcePath}" --dir "${topicDir}"`,
+			`node upsert --task ${taskId} --json-in "${sourcePath}" --dir "${topicDir}"`,
 			tempDir,
 		);
 		expect(sourceResult.exitCode).toBe(0);

@@ -1,27 +1,59 @@
 import { z } from "zod";
-import type { BaseNode, Edge, EvidenceLink } from "../models/types";
+import type { BaseNode, Edge as EdgeType } from "../models/types";
 
-// ── Node Kind ──
+// ── Node Type (4 kinds) ──
 
-export const NodeKindSchema = z.enum([
-	"Entity",
-	"Claim",
-	"Source",
-	"Evidence",
-	"Observation",
-	"Question",
-	"Hypothesis",
-	"Gap",
-	"Task",
-	"Value",
+export const NodeTypeSchema = z.enum(["Entity", "Source", "Evidence", "Proposition"]);
+
+// ── Edge Type (10 kinds) ──
+
+export const EdgeTypeSchema = z.enum([
+	"related_to",
+	"evidence_link",
+	"derived_from",
+	"contradicts",
+	"supports",
+	"supersedes",
+	"answers",
+	"raised_by",
+	"predicts",
+	"sourced_from",
 ]);
+
+// ── Source Type ──
+
+export const SourceTypeSchema = z.enum(["webpage", "pdf", "forum", "repo", "dataset", "note", "other"]);
+
+// ── Proposition Status (12 values) ──
+
+export const PropositionStatusSchema = z.enum([
+	"unrefined",
+	"open",
+	"hypothesized",
+	"asserted",
+	"evaluating",
+	"supported",
+	"weakly_supported",
+	"contested",
+	"contradicted",
+	"superseded",
+	"resolved",
+	"obsolete",
+]);
+
+// ── Evidence Link Role (for evidence_link edge type) ──
+
+export const EvidenceLinkRoleSchema = z.enum(["supports", "contradicts", "mentions", "qualifies"]);
+
+// ── Task Status ──
+
+export const TaskStatusSchema = z.enum(["active", "paused", "completed", "archived"]);
 
 // ── Base Node ──
 
 export const BaseNodeSchema = z.object({
 	id: z.string(),
-	kind: NodeKindSchema,
-	type: z.string().optional(),
+	type: NodeTypeSchema,
 	title: z.string().optional(),
 	text: z.string().optional(),
 	summary: z.string().optional(),
@@ -35,77 +67,30 @@ export const BaseNodeSchema = z.object({
 // ── Entity ──
 
 export const EntitySchema = BaseNodeSchema.extend({
-	kind: z.literal("Entity"),
-	type: z.string(),
+	type: z.literal("Entity"),
 	title: z.string(),
-});
-
-// ── Claim ──
-
-export const ClaimStatusSchema = z.enum([
-	"proposed",
-	"supported",
-	"weakly_supported",
-	"contested",
-	"contradicted",
-	"deprecated",
-	"superseded",
-]);
-
-export const ClaimSchema = BaseNodeSchema.extend({
-	kind: z.literal("Claim"),
-	text: z.string(),
-	status: ClaimStatusSchema,
 });
 
 // ── Source ──
 
 export const SourceSchema = BaseNodeSchema.extend({
-	kind: z.literal("Source"),
-	type: z.enum(["webpage", "pdf", "forum", "repo", "dataset", "note", "other"]),
+	type: z.literal("Source"),
 	title: z.string(),
 });
 
 // ── Evidence ──
 
 export const EvidenceSchema = BaseNodeSchema.extend({
-	kind: z.literal("Evidence"),
-	text: z.string(),
+	type: z.literal("Evidence"),
+	text: z.string().optional(),
 });
 
-// ── Question ──
+// ── Proposition ──
 
-export const QuestionStatusSchema = z.enum(["open", "in_progress", "resolved", "blocked", "obsolete"]);
-
-export const QuestionSchema = BaseNodeSchema.extend({
-	kind: z.literal("Question"),
+export const PropositionSchema = BaseNodeSchema.extend({
+	type: z.literal("Proposition"),
 	text: z.string(),
-	status: QuestionStatusSchema,
-});
-
-// ── Hypothesis ──
-
-export const HypothesisSchema = BaseNodeSchema.extend({
-	kind: z.literal("Hypothesis"),
-	text: z.string(),
-	status: z.string().default("proposed"),
-	confidence: z.number().min(0).max(1).optional(),
-});
-
-// ── Gap ──
-
-export const GapSchema = BaseNodeSchema.extend({
-	kind: z.literal("Gap"),
-	text: z.string(),
-	status: z.string().default("open"),
-});
-
-// ── Observation ──
-
-export const ObservationSchema = BaseNodeSchema.extend({
-	kind: z.literal("Observation"),
-	text: z.string(),
-	status: z.string().default("unresolved"),
+	status: PropositionStatusSchema,
 });
 
 // ── Task ──
@@ -114,7 +99,7 @@ export const TaskSchema = z.object({
 	id: z.string(),
 	title: z.string(),
 	goal: z.string(),
-	status: z.enum(["active", "paused", "completed", "archived"]).default("active"),
+	status: TaskStatusSchema.default("active"),
 	attrs: z.record(z.string(), z.unknown()).default({}),
 	createdAt: z.string(),
 	updatedAt: z.string(),
@@ -124,7 +109,7 @@ export const TaskSchema = z.object({
 
 export const EdgeSchema = z.object({
 	id: z.string(),
-	type: z.string(),
+	type: EdgeTypeSchema,
 	fromId: z.string(),
 	toId: z.string(),
 	directed: z.boolean().default(true),
@@ -132,18 +117,6 @@ export const EdgeSchema = z.object({
 	attrs: z.record(z.string(), z.unknown()).default({}),
 	createdAt: z.string(),
 	updatedAt: z.string(),
-});
-
-// ── Evidence Link ──
-
-export const EvidenceLinkSchema = z.object({
-	id: z.string(),
-	evidenceId: z.string(),
-	targetType: z.enum(["node", "edge"]),
-	targetId: z.string(),
-	role: z.enum(["supports", "contradicts", "mentions", "qualifies"]),
-	confidence: z.number().min(0).max(1).optional(),
-	createdAt: z.string(),
 });
 
 // ── Op Log ──
@@ -157,19 +130,13 @@ export const OpLogSchema = z.object({
 	createdAt: z.string(),
 });
 
-// ── Schema map by kind ──
+// ── Schema map by type ──
 
-export const SchemaByKind: Record<string, z.ZodTypeAny> = {
+export const SchemaByType: Record<string, z.ZodTypeAny> = {
 	Entity: EntitySchema,
-	Claim: ClaimSchema,
 	Source: SourceSchema,
 	Evidence: EvidenceSchema,
-	Observation: ObservationSchema,
-	Question: QuestionSchema,
-	Hypothesis: HypothesisSchema,
-	Gap: GapSchema,
-	Task: BaseNodeSchema.extend({ kind: z.literal("Task") }),
-	Value: BaseNodeSchema.extend({ kind: z.literal("Value") }),
+	Proposition: PropositionSchema,
 };
 
 function formatSchemaErrors(error: z.ZodError): string {
@@ -182,32 +149,31 @@ function formatSchemaErrors(error: z.ZodError): string {
 }
 
 export function validateNode(node: BaseNode): BaseNode {
-	const schema = SchemaByKind[node.kind];
+	const schema = SchemaByType[node.type];
 	if (!schema) {
-		throw new Error(`Unsupported node kind: ${node.kind}`);
+		throw new Error(`Unsupported node type: ${node.type}`);
 	}
 
 	const result = schema.safeParse(node);
 	if (!result.success) {
-		throw new Error(`Invalid ${node.kind} node: ${formatSchemaErrors(result.error)}`);
+		throw new Error(`Invalid ${node.type} node: ${formatSchemaErrors(result.error)}`);
 	}
 
 	return result.data as BaseNode;
 }
 
-export function validateEdge(edge: Edge): Edge {
+export function validateEdge(edge: EdgeType): EdgeType {
 	const result = EdgeSchema.safeParse(edge);
 	if (!result.success) {
 		throw new Error(`Invalid edge: ${formatSchemaErrors(result.error)}`);
 	}
 
-	return result.data;
-}
-
-export function validateEvidenceLink(link: EvidenceLink): EvidenceLink {
-	const result = EvidenceLinkSchema.safeParse(link);
-	if (!result.success) {
-		throw new Error(`Invalid evidence link: ${formatSchemaErrors(result.error)}`);
+	// Validate evidence_link edge has role attr
+	if (edge.type === "evidence_link") {
+		const roleResult = EvidenceLinkRoleSchema.safeParse(edge.attrs?.role);
+		if (!roleResult.success) {
+			throw new Error(`Invalid evidence link role: ${formatSchemaErrors(roleResult.error)}`);
+		}
 	}
 
 	return result.data;

@@ -1,30 +1,18 @@
 import type { BaseNode, Edge } from "../models/types";
 import type { GraphStore } from "../../storage/graph-store";
 
-const KIND_COLORS: Record<string, string> = {
+const TYPE_COLORS: Record<string, string> = {
 	Entity: "#4CAF50",
-	Claim: "#2196F3",
 	Source: "#FF9800",
 	Evidence: "#9C27B0",
-	Observation: "#795548",
-	Question: "#F44336",
-	Hypothesis: "#00BCD4",
-	Gap: "#E91E63",
-	Task: "#607D8B",
-	Value: "#8BC34A",
+	Proposition: "#2196F3",
 };
 
-const KIND_LABELS: Record<string, string> = {
+const TYPE_LABELS: Record<string, string> = {
 	Entity: "实体",
-	Claim: "断言",
 	Source: "来源",
 	Evidence: "证据",
-	Observation: "观察",
-	Question: "问题",
-	Hypothesis: "假设",
-	Gap: "缺口",
-	Task: "任务",
-	Value: "数值",
+	Proposition: "命题",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -71,7 +59,6 @@ export class ExportHtmlService {
 		const graphData = {
 			nodes: filteredNodes.map((n) => ({
 				id: n.id,
-				kind: n.kind,
 				type: n.type,
 				title: n.title,
 				text: n.text?.slice(0, 200),
@@ -162,7 +149,7 @@ svg { width: 100%; height: 100%; }
 </div>
 <div id="legend">
 <h3>节点类型</h3>
-${Object.entries(KIND_LABELS).map(([kind, label]) => `<div class="item"><div class="dot" style="background:${KIND_COLORS[kind]}"></div>${label}</div>`).join("\n")}
+${Object.entries(TYPE_LABELS).map(([kind, label]) => `<div class="item"><div class="dot" style="background:${TYPE_COLORS[kind]}"></div>${label}</div>`).join("\n")}
 </div>
 <div id="stats">
 <h3>图谱统计</h3>
@@ -179,9 +166,9 @@ ${Object.entries(KIND_LABELS).map(([kind, label]) => `<div class="item"><div cla
 <script>
 const GRAPH_DATA = ${JSON.stringify(data)};
 
-const kindColors = ${JSON.stringify(KIND_COLORS)};
+const typeColors = ${JSON.stringify(TYPE_COLORS)};
 const statusColors = ${JSON.stringify(STATUS_COLORS)};
-const kindLabels = ${JSON.stringify(KIND_LABELS)};
+const typeLabels = ${JSON.stringify(TYPE_LABELS)};
 
 let showLabels = true;
 let simulation, svg, g, linkGroup, nodeGroup, labelGroup;
@@ -206,12 +193,12 @@ function init() {
 \tGRAPH_DATA.nodes.forEach(n => nodeMap[n.id] = n);
 
 \t// Stats
-\tconst kindCounts = {};
-\tGRAPH_DATA.nodes.forEach(n => { kindCounts[n.kind] = (kindCounts[n.kind] || 0) + 1; });
+\tconst typeCounts = {};
+\tGRAPH_DATA.nodes.forEach(n => { typeCounts[n.type] = (typeCounts[n.type] || 0) + 1; });
 \tlet statsHtml = '<div class="stat">节点: <span>' + GRAPH_DATA.nodes.length + '</span></div>';
 \tstatsHtml += '<div class="stat">边: <span>' + GRAPH_DATA.edges.length + '</span></div>';
-\tfor (const [k, v] of Object.entries(kindCounts)) {
-\t\tstatsHtml += '<div class="stat">' + (kindLabels[k] || k) + ': <span>' + v + '</span></div>';
+\tfor (const [k, v] of Object.entries(typeCounts)) {
+\t\tstatsHtml += '<div class="stat">' + (typeLabels[k] || k) + ': <span>' + v + '</span></div>';
 \t}
 \tdocument.getElementById("stats-content").innerHTML = statsHtml;
 
@@ -255,8 +242,8 @@ function init() {
 
 \t// Node circles
 \tnode.append("circle")
-\t\t.attr("r", d => d.kind === "Task" ? 8 : (d.kind === "Claim" || d.kind === "Question" ? 10 : 7))
-\t\t.attr("fill", d => kindColors[d.kind] || "#666")
+\t\t.attr("r", d => d.type === "Proposition" ? 10 : 7)
+\t\t.attr("fill", d => typeColors[d.type] || "#666")
 \t\t.attr("stroke", d => {
 \t\t\tif (d.status && statusColors[d.status]) return statusColors[d.status];
 \t\t\treturn "#333";
@@ -300,7 +287,7 @@ function showNodeDetail(d) {
 \tdocument.getElementById("sidebar-title").textContent = d.title || d.text || d.id;
 \tlet html = '';
 \thtml += field("ID", d.id);
-\thtml += field("类型", (kindLabels[d.kind] || d.kind) + (d.type ? " (" + d.type + ")" : ""));
+\thtml += field("类型", typeLabels[d.type] || d.type);
 \thtml += field("状态", d.status || "-");
 \thtml += field("置信度", d.confidence != null ? d.confidence.toFixed(2) : "-");
 \tif (d.text) html += field("内容", d.text);

@@ -1,44 +1,41 @@
 import { describe, it, expect } from "vitest";
 import {
 	EntitySchema,
-	ClaimSchema,
 	SourceSchema,
 	EvidenceSchema,
-	QuestionSchema,
-	NodeKindSchema,
+	PropositionSchema,
+	NodeTypeSchema,
 	BaseNodeSchema,
-	ClaimStatusSchema,
-	QuestionStatusSchema,
+	PropositionStatusSchema,
 	EdgeSchema,
-	EvidenceLinkSchema,
+	EdgeTypeSchema,
+	EvidenceLinkRoleSchema,
 	OpLogSchema,
 	TaskSchema,
+	SchemaByType,
+	validateNode,
+	validateEdge,
 } from "../../src/core/schemas/index";
 
 const now = new Date().toISOString();
 
-// ── NodeKind ──
+// ── NodeType ──
 
-describe("NodeKindSchema", () => {
-	it("should accept valid node kinds", () => {
-		for (const kind of [
-			"Entity",
-			"Claim",
-			"Source",
-			"Evidence",
-			"Observation",
-			"Question",
-			"Hypothesis",
-			"Gap",
-			"Task",
-			"Value",
-		]) {
-			expect(NodeKindSchema.parse(kind)).toBe(kind);
+describe("NodeTypeSchema", () => {
+	it("should accept valid node types", () => {
+		for (const type of ["Entity", "Source", "Evidence", "Proposition"]) {
+			expect(NodeTypeSchema.parse(type)).toBe(type);
 		}
 	});
 
-	it("should reject invalid node kind", () => {
-		expect(() => NodeKindSchema.parse("Invalid")).toThrow();
+	it("should reject invalid node type", () => {
+		expect(() => NodeTypeSchema.parse("Invalid")).toThrow();
+	});
+
+	it("should reject old NodeKind values", () => {
+		for (const old of ["Claim", "Question", "Observation", "Hypothesis", "Gap", "Value"]) {
+			expect(() => NodeTypeSchema.parse(old)).toThrow();
+		}
 	});
 });
 
@@ -48,60 +45,44 @@ describe("EntitySchema", () => {
 	it("should accept a valid entity", () => {
 		const entity = {
 			id: "ent_1",
-			kind: "Entity" as const,
-			type: "Person",
+			type: "Entity" as const,
 			title: "OpenAI",
-			attrs: { aliases: ["OpenAI Inc."] },
+			attrs: { entityType: "Organization", aliases: ["OpenAI Inc."] },
 			createdAt: now,
 			updatedAt: now,
 		};
 		const result = EntitySchema.parse(entity);
-		expect(result.kind).toBe("Entity");
-		expect(result.type).toBe("Person");
+		expect(result.type).toBe("Entity");
 		expect(result.title).toBe("OpenAI");
+		expect(result.attrs.entityType).toBe("Organization");
 	});
 
 	it("should accept entity with default attrs", () => {
 		const entity = {
 			id: "ent_1",
-			kind: "Entity" as const,
-			type: "Person",
+			type: "Entity" as const,
 			title: "Test",
 			createdAt: now,
 			updatedAt: now,
 		};
 		const result = EntitySchema.parse(entity);
-		// BaseNodeSchema sets attrs default to {}
 		expect(result.attrs).toEqual({});
-	});
-
-	it("should reject entity without required type", () => {
-		const entity = {
-			id: "ent_1",
-			kind: "Entity",
-			title: "Test",
-			createdAt: now,
-			updatedAt: now,
-		};
-		expect(() => EntitySchema.parse(entity)).toThrow();
 	});
 
 	it("should reject entity without required title", () => {
 		const entity = {
 			id: "ent_1",
-			kind: "Entity",
-			type: "Person",
+			type: "Entity",
 			createdAt: now,
 			updatedAt: now,
 		};
 		expect(() => EntitySchema.parse(entity)).toThrow();
 	});
 
-	it("should reject entity with wrong kind", () => {
+	it("should reject entity with wrong type", () => {
 		const entity = {
 			id: "ent_1",
-			kind: "Claim",
-			type: "Person",
+			type: "Source",
 			title: "Test",
 			createdAt: now,
 			updatedAt: now,
@@ -112,8 +93,7 @@ describe("EntitySchema", () => {
 	it("should reject entity with confidence out of range", () => {
 		const entity = {
 			id: "ent_1",
-			kind: "Entity",
-			type: "Person",
+			type: "Entity",
 			title: "Test",
 			confidence: 1.5,
 			createdAt: now,
@@ -123,74 +103,85 @@ describe("EntitySchema", () => {
 	});
 });
 
-// ── ClaimSchema ──
+// ── PropositionSchema ──
 
-describe("ClaimSchema", () => {
-	it("should accept a valid claim", () => {
-		const claim = {
-			id: "clm_1",
-			kind: "Claim" as const,
+describe("PropositionSchema", () => {
+	it("should accept a valid proposition", () => {
+		const prop = {
+			id: "prop_1",
+			type: "Proposition" as const,
 			text: "Gemma 4 achieves 85% on MMLU Pro",
 			status: "supported",
-			attrs: { claimType: "benchmark_result" },
+			attrs: {},
 			createdAt: now,
 			updatedAt: now,
 		};
-		const result = ClaimSchema.parse(claim);
-		expect(result.kind).toBe("Claim");
+		const result = PropositionSchema.parse(prop);
+		expect(result.type).toBe("Proposition");
 		expect(result.text).toBe("Gemma 4 achieves 85% on MMLU Pro");
 		expect(result.status).toBe("supported");
 	});
 
-	it("should accept claim with valid time", () => {
-		const claim = {
-			id: "clm_1",
-			kind: "Claim" as const,
-			text: "Some claim",
-			status: "proposed" as const,
-			attrs: {
-				validTime: { start: "2026-01-01", end: null },
-			},
+	it("should accept all 12 valid proposition statuses", () => {
+		for (const status of [
+			"unrefined",
+			"open",
+			"hypothesized",
+			"asserted",
+			"evaluating",
+			"supported",
+			"weakly_supported",
+			"contested",
+			"contradicted",
+			"superseded",
+			"resolved",
+			"obsolete",
+		]) {
+			const prop = {
+				id: "prop_1",
+				type: "Proposition" as const,
+				text: "Test proposition",
+				status,
+				createdAt: now,
+				updatedAt: now,
+			};
+			expect(PropositionSchema.parse(prop).status).toBe(status);
+		}
+	});
+
+	it("should reject proposition without required text", () => {
+		const prop = {
+			id: "prop_1",
+			type: "Proposition",
+			status: "asserted",
 			createdAt: now,
 			updatedAt: now,
 		};
-		const result = ClaimSchema.parse(claim);
-		expect(result.attrs.validTime).toEqual({ start: "2026-01-01", end: null });
+		expect(() => PropositionSchema.parse(prop)).toThrow();
 	});
 
-	it("should reject claim without required text", () => {
-		const claim = {
-			id: "clm_1",
-			kind: "Claim",
-			status: "proposed",
-			createdAt: now,
-			updatedAt: now,
-		};
-		expect(() => ClaimSchema.parse(claim)).toThrow();
-	});
-
-	it("should reject claim with invalid status", () => {
-		const claim = {
-			id: "clm_1",
-			kind: "Claim",
-			text: "Some claim",
+	it("should reject proposition with invalid status", () => {
+		const prop = {
+			id: "prop_1",
+			type: "Proposition",
+			text: "Some proposition",
 			status: "invalid_status",
 			createdAt: now,
 			updatedAt: now,
 		};
-		expect(() => ClaimSchema.parse(claim)).toThrow();
+		expect(() => PropositionSchema.parse(prop)).toThrow();
 	});
 
-	it("should reject claim with wrong kind", () => {
-		const claim = {
-			id: "clm_1",
-			kind: "Entity",
-			text: "Some claim",
-			status: "proposed",
+	it("should reject proposition with wrong type", () => {
+		const prop = {
+			id: "prop_1",
+			type: "Entity",
+			text: "Some proposition",
+			status: "asserted",
 			createdAt: now,
 			updatedAt: now,
 		};
-		expect(() => ClaimSchema.parse(claim)).toThrow();
+		expect(() => PropositionSchema.parse(prop)).toThrow();
 	});
 });
 
@@ -200,60 +191,47 @@ describe("SourceSchema", () => {
 	it("should accept a valid source", () => {
 		const source = {
 			id: "src_1",
-			kind: "Source" as const,
-			type: "webpage" as const,
+			type: "Source" as const,
 			title: "Gemma 4 Technical Report",
-			attrs: { uri: "https://example.com/report" },
+			attrs: { uri: "https://example.com/report", sourceType: "webpage" },
 			createdAt: now,
 			updatedAt: now,
 		};
 		const result = SourceSchema.parse(source);
-		expect(result.kind).toBe("Source");
-		expect(result.type).toBe("webpage");
+		expect(result.type).toBe("Source");
+		expect(result.attrs.sourceType).toBe("webpage");
 	});
 
-	it("should accept all valid source types", () => {
-		for (const type of ["webpage", "pdf", "forum", "repo", "dataset", "note", "other"]) {
+	it("should accept all valid source types in attrs", () => {
+		for (const sourceType of ["webpage", "pdf", "forum", "repo", "dataset", "note", "other"]) {
 			const source = {
 				id: "src_1",
-				kind: "Source" as const,
-				type,
+				type: "Source" as const,
 				title: "Test Source",
+				attrs: { sourceType },
 				createdAt: now,
 				updatedAt: now,
 			};
-			expect(SourceSchema.parse(source).type).toBe(type);
+			expect(SourceSchema.parse(source).attrs.sourceType).toBe(sourceType);
 		}
-	});
-
-	it("should reject source without required type", () => {
-		const source = {
-			id: "src_1",
-			kind: "Source",
-			title: "Test Source",
-			createdAt: now,
-			updatedAt: now,
-		};
-		expect(() => SourceSchema.parse(source)).toThrow();
-	});
-
-	it("should reject source with invalid type", () => {
-		const source = {
-			id: "src_1",
-			kind: "Source",
-			type: "invalid",
-			title: "Test Source",
-			createdAt: now,
-			updatedAt: now,
-		};
-		expect(() => SourceSchema.parse(source)).toThrow();
 	});
 
 	it("should reject source without required title", () => {
 		const source = {
 			id: "src_1",
-			kind: "Source",
-			type: "webpage",
+			type: "Source",
+			attrs: { sourceType: "webpage" },
+			createdAt: now,
+			updatedAt: now,
+		};
+		expect(() => SourceSchema.parse(source)).toThrow();
+	});
+
+	it("should reject source with wrong type", () => {
+		const source = {
+			id: "src_1",
+			type: "Entity",
+			title: "Test Source",
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -267,7 +245,7 @@ describe("EvidenceSchema", () => {
 	it("should accept valid evidence", () => {
 		const evidence = {
 			id: "ev_1",
-			kind: "Evidence" as const,
+			type: "Evidence" as const,
 			text: "Gemma 4 31B achieves 85.2% on MMLU Pro.",
 			attrs: {
 				sourceId: "src_1",
@@ -277,14 +255,14 @@ describe("EvidenceSchema", () => {
 			updatedAt: now,
 		};
 		const result = EvidenceSchema.parse(evidence);
-		expect(result.kind).toBe("Evidence");
+		expect(result.type).toBe("Evidence");
 		expect(result.attrs.sourceId).toBe("src_1");
 	});
 
 	it("should accept evidence with locator", () => {
 		const evidence = {
 			id: "ev_1",
-			kind: "Evidence" as const,
+			type: "Evidence" as const,
 			text: "Evidence text",
 			attrs: {
 				sourceId: "src_1",
@@ -297,100 +275,29 @@ describe("EvidenceSchema", () => {
 		expect(result.attrs.locator).toEqual({ type: "text_span", page: 13, section: "Results" });
 	});
 
-	it("should reject evidence without required text", () => {
+	it("should accept evidence without text (text is optional)", () => {
 		const evidence = {
 			id: "ev_1",
-			kind: "Evidence",
+			type: "Evidence",
 			attrs: { sourceId: "src_1" },
 			createdAt: now,
 			updatedAt: now,
 		};
-		expect(() => EvidenceSchema.parse(evidence)).toThrow();
+		const result = EvidenceSchema.parse(evidence);
+		expect(result.type).toBe("Evidence");
 	});
 
 	it("should accept evidence without sourceId in attrs", () => {
-		// EvidenceSchema does not require sourceId in attrs; it only requires text
 		const evidence = {
 			id: "ev_1",
-			kind: "Evidence",
+			type: "Evidence",
 			text: "Some text",
 			attrs: {},
 			createdAt: now,
 			updatedAt: now,
 		};
 		const result = EvidenceSchema.parse(evidence);
-		expect(result.kind).toBe("Evidence");
-	});
-});
-
-// ── QuestionSchema ──
-
-describe("QuestionSchema", () => {
-	it("should accept a valid question", () => {
-		const question = {
-			id: "q_1",
-			kind: "Question" as const,
-			text: "Are there independent evaluations?",
-			status: "open" as const,
-			attrs: { priority: 0.8, questionType: "verification" },
-			createdAt: now,
-			updatedAt: now,
-		};
-		const result = QuestionSchema.parse(question);
-		expect(result.kind).toBe("Question");
-		expect(result.status).toBe("open");
-	});
-
-	it("should accept all valid question statuses", () => {
-		for (const status of ["open", "in_progress", "resolved", "blocked", "obsolete"]) {
-			const question = {
-				id: "q_1",
-				kind: "Question" as const,
-				text: "A question",
-				status,
-				createdAt: now,
-				updatedAt: now,
-			};
-			expect(QuestionSchema.parse(question).status).toBe(status);
-		}
-	});
-
-	it("should reject question without required text", () => {
-		const question = {
-			id: "q_1",
-			kind: "Question",
-			status: "open",
-			createdAt: now,
-			updatedAt: now,
-		};
-		expect(() => QuestionSchema.parse(question)).toThrow();
-	});
-
-	it("should reject question with invalid status", () => {
-		const question = {
-			id: "q_1",
-			kind: "Question",
-			text: "A question",
-			status: "invalid",
-			createdAt: now,
-			updatedAt: now,
-		};
-		expect(() => QuestionSchema.parse(question)).toThrow();
-	});
-
-	it("should accept question with arbitrary attrs (priority not validated by schema)", () => {
-		// attrs is z.record(z.string(), z.unknown()), so priority value is not range-checked
-		const question = {
-			id: "q_1",
-			kind: "Question",
-			text: "A question",
-			status: "open",
-			attrs: { priority: 1.5 },
-			createdAt: now,
-			updatedAt: now,
-		};
-		const result = QuestionSchema.parse(question);
-		expect(result.attrs.priority).toBe(1.5);
+		expect(result.type).toBe("Evidence");
 	});
 });
 
@@ -426,44 +333,94 @@ describe("EdgeSchema", () => {
 		expect(result.directed).toBe(true);
 	});
 
+	it("should accept evidence_link edge", () => {
+		const edge = {
+			id: "evl_1",
+			type: "evidence_link",
+			fromId: "ev_1",
+			toId: "prop_1",
+			directed: true,
+			attrs: { role: "supports", targetType: "node" },
+			createdAt: now,
+			updatedAt: now,
+		};
+		const result = EdgeSchema.parse(edge);
+		expect(result.type).toBe("evidence_link");
+		expect(result.attrs.role).toBe("supports");
+	});
+
 	it("should reject edge with missing required fields", () => {
 		expect(() => EdgeSchema.parse({ id: "e_1" })).toThrow();
 	});
 });
 
-// ── ClaimStatusSchema ──
+// ── EdgeTypeSchema ──
 
-describe("ClaimStatusSchema", () => {
-	it("should accept all valid claim statuses", () => {
+describe("EdgeTypeSchema", () => {
+	it("should accept all 10 valid edge types", () => {
+		for (const type of [
+			"related_to",
+			"evidence_link",
+			"derived_from",
+			"contradicts",
+			"supports",
+			"supersedes",
+			"answers",
+			"raised_by",
+			"predicts",
+			"sourced_from",
+		]) {
+			expect(EdgeTypeSchema.parse(type)).toBe(type);
+		}
+	});
+
+	it("should reject invalid edge type", () => {
+		expect(() => EdgeTypeSchema.parse("invalid_edge_type")).toThrow();
+	});
+});
+
+// ── PropositionStatusSchema ──
+
+describe("PropositionStatusSchema", () => {
+	it("should accept all valid proposition statuses", () => {
 		for (const status of [
-			"proposed",
+			"unrefined",
+			"open",
+			"hypothesized",
+			"asserted",
+			"evaluating",
 			"supported",
 			"weakly_supported",
 			"contested",
 			"contradicted",
-			"deprecated",
 			"superseded",
+			"resolved",
+			"obsolete",
 		]) {
-			expect(ClaimStatusSchema.parse(status)).toBe(status);
+			expect(PropositionStatusSchema.parse(status)).toBe(status);
 		}
 	});
 
-	it("should reject invalid claim status", () => {
-		expect(() => ClaimStatusSchema.parse("unknown")).toThrow();
+	it("should reject invalid proposition status", () => {
+		expect(() => PropositionStatusSchema.parse("unknown")).toThrow();
+	});
+
+	it("should reject old claim statuses that no longer exist", () => {
+		expect(() => PropositionStatusSchema.parse("proposed")).toThrow();
 	});
 });
 
-// ── QuestionStatusSchema ──
+// ── EvidenceLinkRoleSchema ──
 
-describe("QuestionStatusSchema", () => {
-	it("should accept all valid question statuses", () => {
-		for (const status of ["open", "in_progress", "resolved", "blocked", "obsolete"]) {
-			expect(QuestionStatusSchema.parse(status)).toBe(status);
+describe("EvidenceLinkRoleSchema", () => {
+	it("should accept all valid evidence link roles", () => {
+		for (const role of ["supports", "contradicts", "mentions", "qualifies"]) {
+			expect(EvidenceLinkRoleSchema.parse(role)).toBe(role);
 		}
 	});
 
-	it("should reject invalid question status", () => {
-		expect(() => QuestionStatusSchema.parse("unknown")).toThrow();
+	it("should reject invalid role", () => {
+		expect(() => EvidenceLinkRoleSchema.parse("invalid")).toThrow();
 	});
 });
 
@@ -495,24 +452,6 @@ describe("TaskSchema", () => {
 		};
 		const result = TaskSchema.parse(task);
 		expect(result.status).toBe("active");
-	});
-});
-
-// ── EvidenceLinkSchema ──
-
-describe("EvidenceLinkSchema", () => {
-	it("should accept a valid evidence link", () => {
-		const link = {
-			id: "evl_1",
-			evidenceId: "ev_1",
-			targetType: "node",
-			targetId: "clm_1",
-			role: "supports",
-			confidence: 0.9,
-			createdAt: now,
-		};
-		const result = EvidenceLinkSchema.parse(link);
-		expect(result.role).toBe("supports");
 	});
 });
 
@@ -551,7 +490,7 @@ describe("BaseNodeSchema", () => {
 	it("should accept a minimal valid base node", () => {
 		const node = {
 			id: "ent_1",
-			kind: "Entity",
+			type: "Entity",
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -562,8 +501,7 @@ describe("BaseNodeSchema", () => {
 	it("should accept a full valid base node", () => {
 		const node = {
 			id: "ent_1",
-			kind: "Entity",
-			type: "Person",
+			type: "Entity",
 			title: "Test",
 			text: "text",
 			summary: "summary",
@@ -580,7 +518,7 @@ describe("BaseNodeSchema", () => {
 	it("should reject node without required id", () => {
 		expect(() =>
 			BaseNodeSchema.parse({
-				kind: "Entity",
+				type: "Entity",
 				createdAt: now,
 				updatedAt: now,
 			}),
@@ -591,11 +529,131 @@ describe("BaseNodeSchema", () => {
 		expect(() =>
 			BaseNodeSchema.parse({
 				id: "ent_1",
-				kind: "Entity",
+				type: "Entity",
 				confidence: -0.1,
 				createdAt: now,
 				updatedAt: now,
 			}),
 		).toThrow();
+	});
+
+	it("should reject node with invalid type", () => {
+		expect(() =>
+			BaseNodeSchema.parse({
+				id: "ent_1",
+				type: "Invalid",
+				createdAt: now,
+				updatedAt: now,
+			}),
+		).toThrow();
+	});
+});
+
+// ── SchemaByType ──
+
+describe("SchemaByType", () => {
+	it("should have schemas for all 4 node types", () => {
+		expect(SchemaByType["Entity"]).toBeDefined();
+		expect(SchemaByType["Source"]).toBeDefined();
+		expect(SchemaByType["Evidence"]).toBeDefined();
+		expect(SchemaByType["Proposition"]).toBeDefined();
+	});
+
+	it("should not have schemas for removed node kinds", () => {
+		expect(SchemaByType["Claim"]).toBeUndefined();
+		expect(SchemaByType["Question"]).toBeUndefined();
+		expect(SchemaByType["Observation"]).toBeUndefined();
+		expect(SchemaByType["Hypothesis"]).toBeUndefined();
+		expect(SchemaByType["Gap"]).toBeUndefined();
+	});
+});
+
+// ── validateNode ──
+
+describe("validateNode", () => {
+	it("should validate a valid Entity node", () => {
+		const node = {
+			id: "ent_1",
+			type: "Entity" as const,
+			title: "Test",
+			attrs: {},
+			createdAt: now,
+			updatedAt: now,
+		};
+		const result = validateNode(node);
+		expect(result.type).toBe("Entity");
+	});
+
+	it("should validate a valid Proposition node", () => {
+		const node = {
+			id: "prop_1",
+			type: "Proposition" as const,
+			text: "Test proposition",
+			status: "asserted",
+			attrs: {},
+			createdAt: now,
+			updatedAt: now,
+		};
+		const result = validateNode(node);
+		expect(result.type).toBe("Proposition");
+	});
+
+	it("should throw for unsupported node type", () => {
+		const node = {
+			id: "xxx_1",
+			type: "Unsupported",
+			attrs: {},
+			createdAt: now,
+			updatedAt: now,
+		};
+		expect(() => validateNode(node as any)).toThrow(/Unsupported node type/);
+	});
+});
+
+// ── validateEdge ──
+
+describe("validateEdge", () => {
+	it("should validate a valid edge", () => {
+		const edge = {
+			id: "e_1",
+			type: "related_to",
+			fromId: "ent_1",
+			toId: "ent_2",
+			directed: true,
+			attrs: {},
+			createdAt: now,
+			updatedAt: now,
+		};
+		const result = validateEdge(edge);
+		expect(result.type).toBe("related_to");
+	});
+
+	it("should validate evidence_link edge with role attr", () => {
+		const edge = {
+			id: "evl_1",
+			type: "evidence_link",
+			fromId: "ev_1",
+			toId: "prop_1",
+			directed: true,
+			attrs: { role: "supports" },
+			createdAt: now,
+			updatedAt: now,
+		};
+		const result = validateEdge(edge);
+		expect(result.type).toBe("evidence_link");
+	});
+
+	it("should reject evidence_link edge without valid role", () => {
+		const edge = {
+			id: "evl_1",
+			type: "evidence_link",
+			fromId: "ev_1",
+			toId: "prop_1",
+			directed: true,
+			attrs: { role: "invalid" },
+			createdAt: now,
+			updatedAt: now,
+		};
+		expect(() => validateEdge(edge)).toThrow(/Invalid evidence link role/);
 	});
 });

@@ -162,4 +162,24 @@ export function registerTaskCommand(program: Command): void {
 				writeError((e as Error).message);
 			}
 		});
+
+	// ── Absorbed from research command ──
+
+	cmd
+		.command("continue <id>")
+		.description("Continue the research iteration loop for a task")
+		.option("--max-rounds <number>", "Maximum number of research rounds", "10")
+		.action((id: string, opts: { maxRounds: string }) => {
+			try {
+				const { services } = getContext();
+				const maxRounds = parseInt(opts.maxRounds, 10);
+				if (isNaN(maxRounds) || maxRounds < 1) {
+					writeError("max-rounds must be a positive integer");
+				}
+				const result = services.research.continue(id, maxRounds);
+				writeJson(result);
+			} catch (e) {
+				writeError((e as Error).message);
+			}
+		});
 }

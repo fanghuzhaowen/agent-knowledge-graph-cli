@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { GraphStore, emptyGraphData } from "../../../src/storage/graph-store";
-import type { BaseNode, Edge, EvidenceLink, Task, OpLog } from "../../../src/core/models/types";
+import type { BaseNode, Edge, Task, OpLog } from "../../../src/core/models/types";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,8 +15,7 @@ function makeNode(overrides: Partial<BaseNode> = {}): BaseNode {
 	const now = new Date().toISOString();
 	return {
 		id: "ent_test1",
-		kind: "Entity",
-		type: "Person",
+		type: "Entity",
 		title: "Test Entity",
 		attrs: {},
 		createdAt: now,
@@ -81,7 +80,7 @@ describe("GraphStore - Nodes", () => {
 	it("should list all nodes", () => {
 		context = createTestStore();
 		const node1 = makeNode({ id: "ent_1", title: "Node 1" });
-		const node2 = makeNode({ id: "ent_2", title: "Node 2", kind: "Claim", text: "A claim" });
+		const node2 = makeNode({ id: "prop_1", type: "Proposition", title: undefined, text: "A proposition", status: "asserted" });
 		context.store.upsertNode(node1);
 		context.store.upsertNode(node2);
 
@@ -91,12 +90,12 @@ describe("GraphStore - Nodes", () => {
 
 	it("should list nodes with predicate filter", () => {
 		context = createTestStore();
-		const entity = makeNode({ id: "ent_1", kind: "Entity" });
-		const claim = makeNode({ id: "clm_1", kind: "Claim", text: "A claim" });
+		const entity = makeNode({ id: "ent_1", type: "Entity" });
+		const prop = makeNode({ id: "prop_1", type: "Proposition", text: "A prop", status: "asserted" });
 		context.store.upsertNode(entity);
-		context.store.upsertNode(claim);
+		context.store.upsertNode(prop);
 
-		const entities = context.store.listNodes((n) => n.kind === "Entity");
+		const entities = context.store.listNodes((n) => n.type === "Entity");
 		expect(entities).toHaveLength(1);
 		expect(entities[0].id).toBe("ent_1");
 	});
@@ -106,7 +105,7 @@ describe("GraphStore - Nodes", () => {
 		context.store.upsertNode(makeNode({ id: "ent_1" }));
 		context.store.upsertNode(makeNode({ id: "ent_2" }));
 		expect(context.store.countNodes()).toBe(2);
-		expect(context.store.countNodes((n) => n.kind === "Entity")).toBe(2);
+		expect(context.store.countNodes((n) => n.type === "Entity")).toBe(2);
 	});
 
 	it("should delete a node", () => {
@@ -135,24 +134,26 @@ describe("GraphStore - Nodes", () => {
 		expect(context.store.getEdge("e_1")).toBeUndefined();
 	});
 
-	it("should cascade delete related evidence links when deleting a node", () => {
+	it("should cascade delete evidence_link edges when deleting a node", () => {
 		context = createTestStore();
-		const evidence = makeNode({ id: "ev_1", kind: "Evidence", text: "evidence text" });
-		const target = makeNode({ id: "clm_1", kind: "Claim", text: "claim text" });
-		const link: EvidenceLink = {
+		const evidence = makeNode({ id: "ev_1", type: "Evidence", text: "evidence text" });
+		const prop = makeNode({ id: "prop_1", type: "Proposition", text: "proposition text", status: "asserted" });
+		const evidenceEdge: Edge = {
 			id: "evl_1",
-			evidenceId: "ev_1",
-			targetType: "node",
-			targetId: "clm_1",
-			role: "supports",
+			type: "evidence_link",
+			fromId: "ev_1",
+			toId: "prop_1",
+			directed: true,
+			attrs: { role: "supports", targetType: "node" },
 			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
 		};
 		context.store.upsertNode(evidence);
-		context.store.upsertNode(target);
-		context.store.createEvidenceLink(link);
+		context.store.upsertNode(prop);
+		context.store.createEdge(evidenceEdge);
 
 		context.store.deleteNode("ev_1");
-		expect(context.store.getEvidenceLink("evl_1")).toBeUndefined();
+		expect(context.store.getEdge("evl_1")).toBeUndefined();
 	});
 
 	it("should cascade delete node-task links when deleting a node", () => {
@@ -199,7 +200,7 @@ describe("GraphStore - Edges", () => {
 	it("should list edges with predicate filter", () => {
 		context = createTestStore();
 		context.store.createEdge(makeEdge({ id: "e_1", type: "related_to", fromId: "a", toId: "b" }));
-		context.store.createEdge(makeEdge({ id: "e_2", type: "mentioned_in", fromId: "c", toId: "d" }));
+		context.store.createEdge(makeEdge({ id: "e_2", type: "evidence_link", fromId: "c", toId: "d" }));
 
 		const related = context.store.listEdges((e) => e.type === "related_to");
 		expect(related).toHaveLength(1);
@@ -219,111 +220,26 @@ describe("GraphStore - Edges", () => {
 		expect(context.store.deleteEdge("nonexistent")).toBe(false);
 	});
 
-	it("should cascade delete evidence links when deleting an edge", () => {
+	it("should create and retrieve evidence_link edges", () => {
 		context = createTestStore();
-		const edge = makeEdge({ id: "e_1" });
-		const link: EvidenceLink = {
+		const evidenceEdge: Edge = {
 			id: "evl_1",
-			evidenceId: "ev_1",
-			targetType: "edge",
-			targetId: "e_1",
-			role: "supports",
+			type: "evidence_link",
+			fromId: "ev_1",
+			toId: "prop_1",
+			directed: true,
+			attrs: { role: "supports", targetType: "node" },
 			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
 		};
-		context.store.createEdge(edge);
-		context.store.createEvidenceLink(link);
+		context.store.createEdge(evidenceEdge);
+		const got = context.store.getEdge("evl_1");
+		expect(got).toEqual(evidenceEdge);
+		expect(got?.attrs.role).toBe("supports");
 
-		context.store.deleteEdge("e_1");
-		expect(context.store.getEvidenceLink("evl_1")).toBeUndefined();
-	});
-});
-
-// ── Evidence Links ──
-
-describe("GraphStore - Evidence Links", () => {
-	it("should create and get an evidence link", () => {
-		context = createTestStore();
-		const link: EvidenceLink = {
-			id: "evl_1",
-			evidenceId: "ev_1",
-			targetType: "node",
-			targetId: "clm_1",
-			role: "supports",
-			confidence: 0.9,
-			createdAt: new Date().toISOString(),
-		};
-		context.store.createEvidenceLink(link);
-		const got = context.store.getEvidenceLink(link.id);
-		expect(got).toEqual(link);
-	});
-
-	it("should list all evidence links", () => {
-		context = createTestStore();
-		const link1: EvidenceLink = {
-			id: "evl_1",
-			evidenceId: "ev_1",
-			targetType: "node",
-			targetId: "clm_1",
-			role: "supports",
-			createdAt: new Date().toISOString(),
-		};
-		const link2: EvidenceLink = {
-			id: "evl_2",
-			evidenceId: "ev_2",
-			targetType: "edge",
-			targetId: "e_1",
-			role: "contradicts",
-			createdAt: new Date().toISOString(),
-		};
-		context.store.createEvidenceLink(link1);
-		context.store.createEvidenceLink(link2);
-		expect(context.store.listEvidenceLinks()).toHaveLength(2);
-	});
-
-	it("should filter evidence links by predicate", () => {
-		context = createTestStore();
-		const link1: EvidenceLink = {
-			id: "evl_1",
-			evidenceId: "ev_1",
-			targetType: "node",
-			targetId: "clm_1",
-			role: "supports",
-			createdAt: new Date().toISOString(),
-		};
-		const link2: EvidenceLink = {
-			id: "evl_2",
-			evidenceId: "ev_2",
-			targetType: "node",
-			targetId: "clm_2",
-			role: "contradicts",
-			createdAt: new Date().toISOString(),
-		};
-		context.store.createEvidenceLink(link1);
-		context.store.createEvidenceLink(link2);
-
-		const supports = context.store.listEvidenceLinks((l) => l.role === "supports");
-		expect(supports).toHaveLength(1);
-		expect(supports[0].id).toBe("evl_1");
-	});
-
-	it("should delete an evidence link", () => {
-		context = createTestStore();
-		const link: EvidenceLink = {
-			id: "evl_1",
-			evidenceId: "ev_1",
-			targetType: "node",
-			targetId: "clm_1",
-			role: "supports",
-			createdAt: new Date().toISOString(),
-		};
-		context.store.createEvidenceLink(link);
-		expect(context.store.deleteEvidenceLink(link.id)).toBe(true);
-		expect(context.store.getEvidenceLink(link.id)).toBeUndefined();
-	});
-
-	it("should return false when deleting non-existent evidence link", () => {
-		context = createTestStore();
-		expect(context.store.deleteEvidenceLink("nonexistent")).toBe(false);
+		// List evidence_link edges
+		const evidenceLinks = context.store.listEdges((e) => e.type === "evidence_link");
+		expect(evidenceLinks).toHaveLength(1);
 	});
 });
 
@@ -544,7 +460,6 @@ describe("GraphStore - Save/Load", () => {
 		const data = context.store.raw;
 		expect(data.nodes).toEqual({});
 		expect(data.edges).toEqual({});
-		expect(data.evidenceLinks).toEqual({});
 		expect(data.tasks).toEqual({});
 		expect(data.nodeTaskLinks).toEqual([]);
 		expect(data.opLogs).toEqual([]);

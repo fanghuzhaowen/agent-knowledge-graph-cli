@@ -7,179 +7,85 @@ function writeError(message: string): never {
 	process.exit(1);
 }
 
+const TASK_TYPES = [
+	"extract-entities",
+	"extract-observations",
+	"extract-claims",
+	"extract-relations",
+	"normalize-entities",
+	"normalize-claims",
+	"normalize-predicates",
+	"generate-questions",
+	"generate-hypotheses",
+	"next-search-queries",
+	"assess-evidence",
+	"generate-report",
+] as const;
+
+type TaskType = (typeof TASK_TYPES)[number];
+
+function buildTask(
+	type: TaskType,
+	opts: { source?: string; task?: string; proposition?: string; topic?: string },
+) {
+	const { services } = getContext();
+	switch (type) {
+		case "extract-entities":
+			if (!opts.source) writeError("--source is required for extract-entities");
+			return services.llmTask.buildExtractEntitiesTask(opts.source, opts.task);
+		case "extract-observations":
+			if (!opts.source) writeError("--source is required for extract-observations");
+			return services.llmTask.buildExtractObservationsTask(opts.source, opts.task);
+		case "extract-claims":
+			if (!opts.source) writeError("--source is required for extract-claims");
+			return services.llmTask.buildExtractClaimsTask(opts.source, opts.task);
+		case "extract-relations":
+			if (!opts.source) writeError("--source is required for extract-relations");
+			return services.llmTask.buildExtractRelationsTask(opts.source, opts.task);
+		case "normalize-entities":
+			return services.llmTask.buildNormalizeEntitiesTask(opts.task);
+		case "normalize-claims":
+			return services.llmTask.buildNormalizeClaimsTask(opts.task);
+		case "normalize-predicates":
+			return services.llmTask.buildNormalizePredicatesTask(opts.task);
+		case "generate-questions":
+			return services.llmTask.buildGenerateQuestionsTask(opts.task);
+		case "generate-hypotheses":
+			return services.llmTask.buildGenerateHypothesesTask(opts.task);
+		case "next-search-queries":
+			return services.llmTask.buildNextSearchQueriesTask(opts.task);
+		case "assess-evidence":
+			if (!opts.proposition) writeError("--proposition is required for assess-evidence");
+			return services.llmTask.buildAssessEvidenceTask(opts.proposition);
+		case "generate-report":
+			return services.llmTask.buildGenerateReportTask(opts.task, opts.topic);
+	}
+}
+
 export function registerLlmCommand(program: Command): void {
-	const cmd = program.command("llm").description("Build LLM task envelopes for automated extraction and analysis");
-
-	cmd
-		.command("extract-entities")
-		.description("Build an entity extraction task for a source")
-		.requiredOption("--source <id>", "Source node ID")
+	program
+		.command("llm <type>")
+		.description("Build LLM task envelopes for automated extraction and analysis")
+		.option("--source <id>", "Source node ID (for extract-* types)")
 		.option("--task <taskId>", "Task ID context")
-		.action((opts: { source: string; task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildExtractEntitiesTask(opts.source, opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("extract-observations")
-		.description("Build an observation extraction task for a source")
-		.requiredOption("--source <id>", "Source node ID")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { source: string; task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildExtractObservationsTask(opts.source, opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("extract-claims")
-		.description("Build a claim extraction task for a source")
-		.requiredOption("--source <id>", "Source node ID")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { source: string; task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildExtractClaimsTask(opts.source, opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("extract-relations")
-		.description("Build a relation extraction task for a source")
-		.requiredOption("--source <id>", "Source node ID")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { source: string; task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildExtractRelationsTask(opts.source, opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("normalize-entities")
-		.description("Build an entity normalization task")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildNormalizeEntitiesTask(opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("normalize-claims")
-		.description("Build a claim normalization task")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildNormalizeClaimsTask(opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("normalize-predicates")
-		.description("Build a predicate normalization task")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildNormalizePredicatesTask(opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("generate-questions")
-		.description("Build a question generation task")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildGenerateQuestionsTask(opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("generate-hypotheses")
-		.description("Build a hypothesis generation task")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildGenerateHypothesesTask(opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("next-search-queries")
-		.description("Build a next search queries generation task")
-		.option("--task <taskId>", "Task ID context")
-		.action((opts: { task?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildNextSearchQueriesTask(opts.task);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("assess-evidence")
-		.description("Build an evidence assessment task for a claim")
-		.requiredOption("--claim <id>", "Claim node ID")
-		.action((opts: { claim: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildAssessEvidenceTask(opts.claim);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
-
-	cmd
-		.command("generate-report")
-		.description("Build a rich report generation task from graph data")
-		.option("--task <taskId>", "Task ID context")
-		.option("--topic <topic>", "Research topic for the report")
-		.action((opts: { task?: string; topic?: string }) => {
-			try {
-				const { services } = getContext();
-				const envelope = services.llmTask.buildGenerateReportTask(opts.task, opts.topic);
-				writeJson(envelope);
-			} catch (e) {
-				writeError((e as Error).message);
-			}
-		});
+		.option("--proposition <id>", "Proposition node ID (for assess-evidence)")
+		.option("--topic <topic>", "Research topic (for generate-report)")
+		.action(
+			(
+				type: string,
+				opts: { source?: string; task?: string; proposition?: string; topic?: string },
+			) => {
+				try {
+					if (!TASK_TYPES.includes(type as TaskType)) {
+						writeError(
+							`Unknown task type: ${type}. Valid types: ${TASK_TYPES.join(", ")}`,
+						);
+					}
+					const envelope = buildTask(type as TaskType, opts);
+					writeJson(envelope);
+				} catch (e) {
+					writeError((e as Error).message);
+				}
+			},
+		);
 }

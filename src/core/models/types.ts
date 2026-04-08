@@ -1,37 +1,46 @@
-// ── Node kinds ──
+// ── Node types (4 kinds) ──
 
-export type NodeKind =
-	| "Entity"
-	| "Claim"
-	| "Source"
-	| "Evidence"
-	| "Observation"
-	| "Question"
-	| "Hypothesis"
-	| "Gap"
-	| "Task"
-	| "Value";
+export type NodeType = "Entity" | "Source" | "Evidence" | "Proposition";
 
-// ── Claim status ──
+// ── Entity sub-types ──
 
-export type ClaimStatus =
-	| "proposed"
-	| "supported"
-	| "weakly_supported"
-	| "contested"
-	| "contradicted"
-	| "deprecated"
-	| "superseded";
+export type EntitySubType = string; // "Person" | "Organization" | "Concept" | ...
 
-// ── Question status ──
-
-export type QuestionStatus = "open" | "in_progress" | "resolved" | "blocked" | "obsolete";
-
-// ── Source type ──
+// ── Source types ──
 
 export type SourceType = "webpage" | "pdf" | "forum" | "repo" | "dataset" | "note" | "other";
 
-// ── Evidence link role ──
+// ── Proposition status (unified lifecycle) ──
+
+export type PropositionStatus =
+	| "unrefined"          // 原始观察（原 Observation）
+	| "open"               // 开放问题（原 Question）
+	| "hypothesized"       // 形成假说（原 Hypothesis）
+	| "asserted"           // 来源断言（原 Claim，从文本提取）
+	| "evaluating"         // 评估中
+	| "supported"          // 证据支持
+	| "weakly_supported"   // 证据薄弱
+	| "contested"          // 有争议
+	| "contradicted"       // 被反驳
+	| "superseded"         // 被取代
+	| "resolved"           // 已解决
+	| "obsolete";          // 已过时
+
+// ── Edge types (10 kinds) ──
+
+export type EdgeType =
+	| "related_to"
+	| "evidence_link"
+	| "derived_from"
+	| "contradicts"
+	| "supports"
+	| "supersedes"
+	| "answers"
+	| "raised_by"
+	| "predicts"
+	| "sourced_from";
+
+// ── Evidence link role (for evidence_link edge type) ──
 
 export type EvidenceLinkRole = "supports" | "contradicts" | "mentions" | "qualifies";
 
@@ -39,12 +48,33 @@ export type EvidenceLinkRole = "supports" | "contradicts" | "mentions" | "qualif
 
 export type TaskStatus = "active" | "paused" | "completed" | "archived";
 
+// ── Gap result (computed, not stored) ──
+
+export interface GapResult {
+	targetId: string;
+	gapType: "missing_evidence" | "unanswered" | "orphan" | "weak_support";
+	severity: number;  // [0, 1]
+	description: string;
+}
+
+// ── Claim result (computed from proposition + evidence evaluation) ──
+
+export interface ClaimResult {
+	propositionId: string;
+	text: string;
+	verdict: "supported" | "weakly_supported" | "contested" | "contradicted";
+	confidence: number;
+	evidenceChain: {
+		supporting: { evidenceId: string; linkConfidence: number }[];
+		contradicting: { evidenceId: string; linkConfidence: number }[];
+	};
+}
+
 // ── Base Node ──
 
 export interface BaseNode {
 	id: string;
-	kind: NodeKind;
-	type?: string;
+	type: NodeType;
 	title?: string;
 	text?: string;
 	summary?: string;
@@ -67,20 +97,6 @@ export interface Edge {
 	attrs: Record<string, unknown>;
 	createdAt: string;
 	updatedAt: string;
-}
-
-// ── Evidence Link ──
-
-export type EvidenceLinkTargetType = "node" | "edge";
-
-export interface EvidenceLink {
-	id: string;
-	evidenceId: string;
-	targetType: EvidenceLinkTargetType;
-	targetId: string;
-	role: EvidenceLinkRole;
-	confidence?: number;
-	createdAt: string;
 }
 
 // ── Task ──
@@ -165,13 +181,13 @@ export interface PromptTemplateContext {
 	taskChecklist?: TaskChecklist | null;
 	source?: BaseNode;
 	focusNodes?: BaseNode[];
-	relatedClaims?: BaseNode[];
+	relatedPropositions?: BaseNode[];
 	relatedEvidence?: BaseNode[];
 	relatedEdges?: Edge[];
-	openQuestions?: BaseNode[];
+	openPropositions?: BaseNode[];
 	knownSchema?: {
 		entityTypes: string[];
-		claimTypes: string[];
+		propositionTypes: string[];
 		predicates: string[];
 	};
 }

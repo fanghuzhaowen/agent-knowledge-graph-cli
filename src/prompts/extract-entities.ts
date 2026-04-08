@@ -10,7 +10,7 @@ ${ctx.source.attrs?.uri ? `URI: ${ctx.source.attrs.uri}` : ""}`
 		: "## 来源内容\n（未提供来源）";
 
 	const existingEntities = (ctx.focusNodes ?? [])
-		.filter((n) => n.kind === "Entity")
+		.filter((n) => n.type === "Entity")
 		.map((n) => `- ${n.title ?? n.id} (${n.type ?? "未分类"})${n.attrs?.aliases ? ` 别名: ${(n.attrs.aliases as string[]).join(", ")}` : ""}`)
 		.join("\n");
 

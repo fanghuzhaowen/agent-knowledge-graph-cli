@@ -10,11 +10,11 @@ ${hasFullText ? `正文内容:\n${ctx.source.text}` : `内容摘要: ${ctx.sourc
 ${ctx.source.attrs?.uri ? `URI: ${ctx.source.attrs.uri}` : ""}`
 		: "## 来源内容\n（未提供来源）";
 
-	const existingClaims = (ctx.relatedClaims ?? [])
+	const existingClaims = (ctx.relatedPropositions ?? [])
 		.map((n) => `- [${n.id}] ${n.text ?? n.summary ?? n.id} (状态: ${n.status ?? "未知"})`)
 		.join("\n");
 
-	const knownClaimTypes = ctx.knownSchema?.claimTypes?.join(", ") ?? "事实陈述, 观点, 预测, 因果关系, 定义, 比较";
+	const knownClaimTypes = ctx.knownSchema?.propositionTypes?.join(", ") ?? "事实陈述, 观点, 预测, 因果关系, 定义, 比较";
 
 	return `你是一个知识图谱断言提取专家。请从给定的来源内容中深度提取有意义的断言（Claim）。
 

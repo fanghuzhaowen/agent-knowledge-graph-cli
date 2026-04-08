@@ -25,23 +25,23 @@ A graph-driven iterative deep research tool. Designed for LLM/Agent invocation �
  kg new-topic "AI Safety Research"
         │
         ▼
- ┌─────────────────────────────────────────────┐
- │               kg.json (Graph)               │
- │                                             │
- │  [Source] ──extract──▶ [Claim] ◀──supports── [Evidence]  │
- │     │                    │                              │
- │   relates_to         contested                        │
- │     │                    │                              │
- │     ▼                    ▼                              │
- │  [Entity]           [Question] ◀──answers── [Gap]      │
- └─────────────────────────────────────────────┘
+ ┌──────────────────────────────────────────────────────────┐
+ │                     kg.json (Graph)                      │
+ │                                                          │
+ │  [Source] ──extract──▶ [Proposition] ◀──supports── [Evidence]  │
+ │     │                     │        │                              │
+ │   sourced_from        contradicts  answers                      │
+ │     │                     │        │                              │
+ │     ▼                     ▼        ▼                              │
+ │  [Entity]            [Proposition] ◀──raised_by── [Proposition] │
+ └──────────────────────────────────────────────────────────┘
         │
         ▼  (Agent loops until gaps are filled)
- ┌─────────────────────────────────────────────┐
- │  ✅ Evidence-backed research report          │
- │  ✅ Verified claims with source traces       │
- │  ✅ Identified knowledge gaps & questions    │
- └─────────────────────────────────────────────┘
+ ┌──────────────────────────────────────────────────────────┐
+ │  Evidence-backed research report                          │
+ │  Verified propositions with source traces                 │
+ │  Computed knowledge gaps driving next research round      │
+ └──────────────────────────────────────────────────────────┘
 ```
 
 ## Why AI Agents Need `kg`
@@ -50,11 +50,12 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 
 **Core Value for Agents:**
 
-- **Graph-as-Memory** — Agents no longer rely on sliding context windows or vector retrieval. Instead, they store and reason over knowledge through a semantic network of entities, claims, evidence, and questions
+- **Graph-as-Memory** — Agents no longer rely on sliding context windows or vector retrieval. Instead, they store and reason over knowledge through a semantic network of entities, propositions, evidence, and sources
 - **Zero Model Coupling** — The CLI never calls any LLM API. It outputs standardized `LlmTaskEnvelope` objects (containing context, instructions, prompt templates, and output schemas), letting agents freely choose their model and invocation strategy
-- **Evidence Chain Tracking** — Every Claim traces back to its original Source → Evidence → Link relationship, supporting multiple evidence roles (`supports`, `contradicts`, `weakly_supported`). Agents achieve genuine evidence-based reasoning
-- **Automatic Gap Detection** — `graph gaps --detect` proactively discovers knowledge blind spots (unsubstantiated claims, unanswered questions, orphaned nodes), driving the agent's next autonomous search round
-- **Iterative Research Loop** — `task continue` orchestrates the full "search → extract → challenge → fill gaps" cycle. Agents complete deep research simply by looping
+- **Evidence Chain Tracking** — Every Proposition traces back to its original Source -> Evidence -> evidence_link edge relationship, supporting multiple evidence roles (`supports`, `contradicts`, `weakly_supported`). Agents achieve genuine evidence-based reasoning
+- **Unified Proposition Model** — Questions, hypotheses, claims, and observations are all represented as Proposition nodes with a 12-state lifecycle, simplifying the graph while preserving full expressiveness
+- **Computed Gap Detection** — `graph gaps --detect` returns computed `GapResult[]` — proactively discovering knowledge blind spots (unsubstantiated propositions, unanswered questions, orphaned nodes) without storing Gap nodes in the graph
+- **Iterative Research Loop** — `task continue` orchestrates the full "search -> extract -> challenge -> fill gaps" cycle. Agents complete deep research simply by looping
 - **Externalized Process Memory** — Task checklists persist to disk, allowing agents to seamlessly resume unfinished work across sessions
 - **Lightweight & Dependency-Free** — Single-file JSON storage (`kg.json`), no database required, zero ops cost. Embeds into any agent toolchain
 
@@ -79,7 +80,7 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 ## Why Choose `kg`
 
 - **Lightweight & Zero Dependencies** — No database, no server, no runtime services. A single `kg.json` file is all you need. Ship it, version it, share it — zero ops cost
-- **Single-File Storage** — All nodes, edges, evidence links, and operation logs live in one `kg.json`. No migrations, no schema sync, no distributed state. Portable and inspectable
+- **Single-File Storage** — All nodes, edges, and operation logs live in one `kg.json`. No migrations, no schema sync, no distributed state. Portable and inspectable
 - **Clean & Concise Codebase** — Minimal TypeScript implementation, easy to read, extend, and embed into any agent toolchain
 - **LLM Envelope Mechanism (`LlmTaskEnvelope`)** — No need to integrate any LLM API. The CLI outputs structured task envelopes (context + instructions + prompt + output schema). Your existing Agent reads the envelope and calls its own LLM directly — `kg` never touches model keys or endpoints
 
@@ -90,6 +91,9 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 git clone https://github.com/fanghuzhaowen/agent-knowledge-graph-cli.git
 cd agent-knowledge-graph-cli
 bun install
+
+# Build
+bun run build
 
 # Link globally so you can use `kg` directly
 bun link
@@ -116,7 +120,7 @@ DIR="./temp/Gemma4Review_1712130000000"
 kg task create --title "Gemma4 Review Research" --goal "Evaluate whether official benchmarks have independent evidence support" --dir $DIR
 
 # Add a source
-echo '{"title":"Gemma 4 Technical Report","type":"webpage","attrs":{"uri":"https://example.com/gemma4-report","author":"Google"}}' | kg node upsert --json-in - --dir $DIR
+echo '{"title":"Gemma 4 Technical Report","type":"Source","attrs":{"uri":"https://example.com/gemma4-report","sourceType":"webpage","author":"Google"}}' | kg node upsert --json-in - --dir $DIR
 
 # List all nodes
 kg node list --dir $DIR
@@ -129,7 +133,7 @@ kg node list --dir $DIR
 ```bash
 # Nodes
 kg node get <id> --dir <dir>
-kg node list [--kind Entity] [--status open] --dir <dir>
+kg node list [--type Entity] [--status open] --dir <dir>
 kg node upsert --json-in data.json --dir <dir>
 kg node delete <id> --dir <dir>
 
@@ -140,49 +144,47 @@ kg edge list [--from ent_1] [--type related_to] --dir <dir>
 kg edge delete <id> --dir <dir>
 ```
 
+> Note: `--kind` is still accepted as an alias for `--type` in all node commands.
+
 ### Evidence Management
 
 ```bash
 # Add a source
-echo '{"title":"Paper Title","type":"webpage","kind":"Source"}' | kg node upsert --json-in - --dir <dir>
+echo '{"title":"Paper Title","type":"Source","attrs":{"uri":"https://example.com","sourceType":"webpage"}}' | kg node upsert --json-in - --dir <dir>
 
 # Add evidence
-echo '{"sourceId":"src_xxx","snippet":"Original quote"}' | kg evidence add --json-in - --dir <dir>
+echo '{"type":"Evidence","text":"Original quote","attrs":{"sourceId":"src_xxx"}}' | kg node upsert --json-in - --dir <dir>
 
-# Link evidence to a Claim
-kg evidence link --evidence ev_1 --target clm_1 --role supports --dir <dir>
+# Link evidence to a Proposition (creates an evidence_link edge)
+kg evidence link --evidence ev_1 --target prop_1 --role supports --dir <dir>
 
 # List all evidence for a target
-kg evidence list --target clm_1 --dir <dir>
+kg evidence list --target prop_1 --dir <dir>
 ```
 
-### Claim & Node Status
+### Proposition Management
 
 ```bash
-# Create a Claim
-echo '{"text":"Gemma 4 31B scores 85.2% on MMLU Pro","status":"proposed","kind":"Claim"}' | kg node upsert --json-in - --dir <dir>
+# Create a Proposition (claim type)
+echo '{"type":"Proposition","text":"Gemma 4 31B scores 85.2% on MMLU Pro","status":"unrefined","attrs":{"propositionType":"claim"}}' | kg node upsert --json-in - --dir <dir>
 
-# Update status (dispatches by node kind)
-kg node set-status clm_1 supported --dir <dir>
+# Create a Proposition (question type)
+echo '{"type":"Proposition","text":"Are there third-party independent evaluations?","status":"open","attrs":{"propositionType":"question"}}' | kg node upsert --json-in - --dir <dir>
+
+# Create a Proposition (hypothesis type)
+echo '{"type":"Proposition","text":"Independent evaluation scores may be lower than official","status":"hypothesized","attrs":{"propositionType":"hypothesis"}}' | kg node upsert --json-in - --dir <dir>
+
+# Update proposition status
+kg node set-status prop_1 supported --dir <dir>
 
 # Check conflicts
-kg node conflicts clm_1 --dir <dir>
+kg node conflicts prop_1 --dir <dir>
 
-# Merge two claims
-kg node merge clm_1 clm_2 --dir <dir>
-```
-
-### Question / Hypothesis
-
-```bash
-# Add a question
-echo '{"text":"Are there third-party independent evaluations?","status":"open","kind":"Question"}' | kg node upsert --json-in - --dir <dir>
+# Merge two propositions
+kg node merge prop_1 prop_2 --dir <dir>
 
 # List open questions
-kg node list --kind Question --status open --dir <dir>
-
-# Add a hypothesis
-echo '{"text":"Independent evaluation scores may be lower than official","status":"proposed","kind":"Hypothesis"}' | kg node upsert --json-in - --dir <dir>
+kg node list --type Proposition --status open --dir <dir>
 ```
 
 ### Graph Queries
@@ -200,7 +202,7 @@ kg graph stats --dir <dir>
 # Graph lint
 kg graph lint --dir <dir>
 
-# Detect & list knowledge gaps
+# Detect knowledge gaps (returns computed GapResult[], no nodes created)
 kg graph gaps --detect --dir <dir>
 ```
 
@@ -222,8 +224,8 @@ kg graph export-html -o graph.html --task task_1 --dir <dir>
 **Features:**
 
 - Force-directed layout with drag & zoom
-- Color-coded nodes by kind (Entity, Claim, Source, Evidence, etc.)
-- Color-coded borders by status (supported, contested, open, etc.)
+- Color-coded nodes by type (Entity, Source, Evidence, Proposition)
+- Color-coded borders by proposition status (supported, contested, open, etc.)
 - Click any node to inspect details in sidebar
 - Search nodes by title or text
 - Export as SVG
@@ -254,7 +256,7 @@ All `llm` commands do not call models directly. They output JSON-formatted `LlmT
 # Extract entities from a source
 kg llm extract-entities --source src_1 --dir <dir>
 
-# Extract claims from a source
+# Extract propositions from a source
 kg llm extract-claims --source src_1 --dir <dir>
 
 # Generate new research questions
@@ -264,9 +266,9 @@ kg llm generate-questions --dir <dir>
 kg llm next-search-queries --dir <dir>
 
 # Assess evidence quality
-kg llm assess-evidence --claim clm_1 --dir <dir>
+kg llm assess-evidence --proposition prop_1 --dir <dir>
 
-# Entity/Claim deduplication
+# Entity/Proposition deduplication
 kg llm normalize-entities --dir <dir>
 kg llm normalize-claims --dir <dir>
 
@@ -287,13 +289,34 @@ kg llm generate-report --task task_1 --topic "My Topic" --dir <dir>
   },
   "inputContext": {
     "source": { "id": "src_1", "title": "..." },
-    "existingClaims": [...]
+    "existingPropositions": [...]
   },
-  "instructions": "Extract candidate factual claims...",
+  "instructions": "Extract candidate propositions from the source...",
   "recommendedPrompt": "You are given a source...",
-  "outputSchema": { "type": "object", "properties": { "claims": { "type": "array" } } },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "propositions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" },
+            "type": { "type": "string", "enum": ["Proposition"] },
+            "status": { "type": "string" },
+            "attrs": {
+              "type": "object",
+              "properties": {
+                "propositionType": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "executionHint": {
-    "suggestedCommand": "kg node upsert --json-in claims.json"
+    "suggestedCommand": "kg node upsert --json-in propositions.json"
   }
 }
 ```
@@ -302,28 +325,83 @@ kg llm generate-report --task task_1 --topic "My Topic" --dir <dir>
 
 | Type | Description | Key Fields |
 |------|-------------|------------|
-| `Entity` | Objective objects (person/org/concept/...) | type, title |
-| `Claim` | Verifiable assertion | text, status, confidence |
-| `Source` | Original source material | title, attrs.uri |
-| `Evidence` | Evidence excerpt | text, attrs.sourceId |
-| `Observation` | Candidate fact | text, status |
-| `Question` | Question to answer | text, status, attrs.priority |
-| `Hypothesis` | Hypothesis to verify | text, status |
-| `Gap` | Knowledge gap | text, attrs.gapType |
-| `Task` | Research task | title, goal, status |
-| `Value` | Numeric node | text |
+| `Entity` | Objective objects (person/org/concept/...) | attrs.entityType, title |
+| `Source` | Original source material | title, attrs.uri, attrs.sourceType |
+| `Evidence` | Evidence excerpt (includes numeric values) | text, attrs.sourceId, attrs.valueType |
+| `Proposition` | Unified proposition (questions/hypotheses/claims/observations) | text, status (12 states), attrs.propositionType |
 
-## Claim Status Flow
+**Proposition sub-types** (`attrs.propositionType`): `question`, `hypothesis`, `claim`, `observation`
+
+## Edge Types
 
 ```
-proposed → supported → deprecated
-         → weakly_supported → contested → contradicted
-                                    → superseded
+related_to, evidence_link, derived_from, contradicts, supports,
+supersedes, answers, raised_by, predicts, sourced_from
+```
+
+| Edge Type | Description |
+|-----------|-------------|
+| `related_to` | Generic relationship between any two nodes |
+| `evidence_link` | Links Evidence to a Proposition (created by `evidence link` command) |
+| `derived_from` | Proposition derived from another node |
+| `contradicts` | One proposition contradicts another |
+| `supports` | One node supports another |
+| `supersedes` | One proposition supersedes an older one |
+| `answers` | One proposition answers another (e.g. answer to a question) |
+| `raised_by` | A proposition raised by another node |
+| `predicts` | A proposition predicts something about another node |
+| `sourced_from` | Node sourced from a Source |
+
+## Proposition Status Flow
+
+```
+unrefined -> open -> hypothesized -> asserted -> evaluating -> supported
+                                                           -> weakly_supported
+                                                           -> contested -> contradicted
+                                                           -> superseded
+                                                           -> resolved
+                                                           -> obsolete
+```
+
+**Status descriptions:**
+
+| Status | Description |
+|--------|-------------|
+| `unrefined` | Raw extraction, not yet reviewed |
+| `open` | Actively being investigated |
+| `hypothesized` | Formulated as a hypothesis to test |
+| `asserted` | Stated as a claim with some backing |
+| `evaluating` | Under active evidence assessment |
+| `supported` | Strong evidence in favor |
+| `weakly_supported` | Limited or low-quality evidence |
+| `contested` | Conflicting evidence exists |
+| `contradicted` | Evidence predominantly refutes |
+| `superseded` | Replaced by a newer proposition |
+| `resolved` | Definitively settled |
+| `obsolete` | No longer relevant |
+
+## Gap Detection
+
+`graph gaps --detect` returns a computed `GapResult[]` array — it does **not** create Gap nodes in the graph. Gaps are detected on-the-fly by analyzing the current graph state (e.g., unsubstantiated propositions, unanswered questions, orphaned nodes).
+
+```json
+[
+  {
+    "gapType": "unsubstantiated_proposition",
+    "nodeId": "prop_5",
+    "description": "Proposition has no supporting or contradicting evidence"
+  },
+  {
+    "gapType": "unanswered_question",
+    "nodeId": "prop_3",
+    "description": "Question has no answer proposition linked via 'answers' edge"
+  }
+]
 ```
 
 ## Storage Format
 
-Each research directory contains a single `kg.json` file storing all nodes, edges, evidence links, and operation logs.
+Each research directory contains a single `kg.json` file storing all nodes, edges, and operation logs.
 
 ```
 temp/{topic}_{timestamp}/
@@ -336,16 +414,17 @@ temp/{topic}_{timestamp}/
 
 | | `kg` (This Tool) | RAG / Vector DB | Raw LLM Context | Knowledge Graph DB |
 |---|---|---|---|---|
-| **Structured relations** | ✅ Entities, Claims, Evidence | ❌ Flat chunks | ❌ Unstructured | ✅ Full graph |
-| **Evidence traceability** | ✅ Source → Evidence → Claim | ❌ Similarity only | ❌ None | ⚠️ Manual setup |
-| **Gap detection** | ✅ Built-in | ❌ | ❌ | ❌ |
-| **Agent-ready output** | ✅ LlmTaskEnvelope | ❌ | ❌ | ❌ |
-| **Zero infrastructure** | ✅ Single JSON file | ❌ Need vector DB | ✅ | ❌ Need graph DB |
-| **Model agnostic** | ✅ Any LLM | ✅ | ✅ | ✅ |
+| **Structured relations** | 4 node types, 10 edge types | Flat chunks | Unstructured | Full graph |
+| **Evidence traceability** | Source -> Evidence -> Proposition via `evidence_link` edges | Similarity only | None | Manual setup |
+| **Unified proposition model** | Questions/hypotheses/claims/observations as one type | N/A | N/A | N/A |
+| **Gap detection** | Computed on-the-fly (no stored nodes) | No | No | No |
+| **Agent-ready output** | LlmTaskEnvelope | No | No | No |
+| **Zero infrastructure** | Single JSON file | Need vector DB | Yes | Need graph DB |
+| **Model agnostic** | Any LLM | Yes | Yes | Yes |
 
 ## Roadmap
 
-> Thinking... 🤔
+> Thinking...
 
 ## Contributing
 
@@ -370,10 +449,10 @@ bun run test:e2e          # E2E tests
 
 ## License
 
-[MIT](./LICENSE) © misakaikato
+[MIT](./LICENSE) misakaikato
 
 <div align="center">
 
-**[⬆ Back to Top](#agent-knowledge-graph-cli-kg)**
+**[Back to Top](#agent-knowledge-graph-cli-kg)**
 
 </div>

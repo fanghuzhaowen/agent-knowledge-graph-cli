@@ -1,8 +1,8 @@
-import type { BaseNode, LlmTaskEnvelope } from "../models/types";
+import type { BaseNode, GapResult, LlmTaskEnvelope } from "../models/types";
 import type { GraphStore } from "../../storage/graph-store";
 import type { GraphService } from "./graph-service";
 import type { LlmTaskService } from "./llm-task-service";
-import type { QuestionService } from "./question-service";
+import type { PropositionService } from "./proposition-service";
 import type { GapService } from "./gap-service";
 import type { TaskChecklistService } from "./task-checklist-service";
 
@@ -12,13 +12,13 @@ export interface ResearchContinueResult {
 	phase: ResearchPhase;
 	nextQueries: LlmTaskEnvelope | null;
 	stats: {
-		nodeCountByKind: Record<string, number>;
+		nodeCountByType: Record<string, number>;
 		edgeCountByType: Record<string, number>;
 		totalNodes: number;
 		totalEdges: number;
 	};
-	openQuestions: BaseNode[];
-	gaps: BaseNode[];
+	openPropositions: BaseNode[];
+	gaps: GapResult[];
 	workflowChecklist?: {
 		tasksFile: string;
 		summary: {
@@ -42,24 +42,17 @@ export class ResearchService {
 		private store: GraphStore,
 		private graphService: GraphService,
 		private llmTask: LlmTaskService,
-		private questionService: QuestionService,
+		private propositionService: PropositionService,
 		private gapService: GapService,
 		private taskChecklistService: TaskChecklistService,
 	) {}
 
-	/**
-	 * Get the current research round from the Task node.
-	 * Returns the next round number to plan.
-	 */
 	private getCurrentRound(taskId: string): number {
 		const task = this.store.getTask(taskId);
 		if (!task) return 1;
 		return ((task.attrs?.round as number) ?? 0) + 1;
 	}
 
-	/**
-	 * Record the round that has just been planned.
-	 */
 	private recordRound(taskId: string, round: number): number {
 		const task = this.store.getTask(taskId);
 		if (!task) return 1;
@@ -70,20 +63,14 @@ export class ResearchService {
 		return round;
 	}
 
-	/**
-	 * Determine the current phase based on graph state.
-	 */
-	private determinePhase(openQuestions: BaseNode[], gaps: BaseNode[], stats: ReturnType<GraphService["getStats"]>): ResearchPhase {
-		// If the graph is empty, we need to start with search
+	private determinePhase(openPropositions: BaseNode[], gaps: GapResult[], stats: ReturnType<GraphService["getStats"]>): ResearchPhase {
 		if (stats.totalNodes === 0) {
 			return "search";
 		}
 
-		// If there are open questions or gaps, we need more research
-		if (openQuestions.length > 0 || gaps.length > 0) {
-			// Check if we have sources to extract from
-			const sourceCount = stats.nodeCountByKind["Source"] ?? 0;
-			const evidenceCount = stats.nodeCountByKind["Evidence"] ?? 0;
+		if (openPropositions.length > 0 || gaps.length > 0) {
+			const sourceCount = stats.nodeCountByType["Source"] ?? 0;
+			const evidenceCount = stats.nodeCountByType["Evidence"] ?? 0;
 
 			if (sourceCount === 0) {
 				return "search";
@@ -97,20 +84,15 @@ export class ResearchService {
 		return "done";
 	}
 
-	/**
-	 * Main entry point: continue the research loop.
-	 */
 	continue(taskId: string, maxRounds: number = 10): ResearchContinueResult {
-		// Get current round
 		const currentRound = this.getCurrentRound(taskId);
 
-		// Check if we've exceeded max rounds
 		if (currentRound > maxRounds) {
 			return {
 				phase: "done",
 				nextQueries: null,
 				stats: this.graphService.getStats(taskId),
-				openQuestions: [],
+				openPropositions: [],
 				gaps: [],
 				shouldContinue: false,
 				round: currentRound,
@@ -118,43 +100,46 @@ export class ResearchService {
 			};
 		}
 
-		// Build next search queries task (does not execute, just builds the envelope)
 		const nextQueriesEnvelope = this.llmTask.buildNextSearchQueriesTask(taskId);
 
-		// Get current stats
 		const stats = this.graphService.getStats(taskId);
 
-		// Get open questions
-		const openQuestions = this.questionService.listQuestions({ status: "open", taskId });
+		const openPropositions = this.propositionService.listPropositions({ status: "open", taskId });
 
-		// Get gaps
-		const gaps = this.gapService.listGaps({ taskId, status: "open" });
+		const gaps = this.gapService.detectGaps(taskId);
 
-		// Determine phase
-		const phase = this.determinePhase(openQuestions, gaps, stats);
+		const phase = this.determinePhase(openPropositions, gaps, stats);
+
+		// Convert GapResult[] to BaseNode-like format for syncResearchRoundPlan
+		const gapNodes = gaps.map((g) => ({
+			id: g.targetId,
+			type: "Proposition" as const,
+			text: g.description,
+			attrs: { gapType: g.gapType, severity: g.severity },
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+		}));
+
 		const checklist = this.taskChecklistService.syncResearchRoundPlan({
 			taskId,
 			round: currentRound,
 			phase,
-			openQuestions,
-			gaps,
+			openQuestions: openPropositions,
+			gaps: gapNodes,
 			hasNextQueries: nextQueriesEnvelope !== null,
 		});
 
-		// Determine if we should continue
 		const shouldContinue = phase !== "done" && currentRound <= maxRounds;
 
-		// Record the round that has just been planned
 		this.recordRound(taskId, currentRound);
 
-		// Build message
-		const message = this.buildPhaseMessage(phase, openQuestions, gaps, stats, currentRound);
+		const message = this.buildPhaseMessage(phase, openPropositions, gaps, stats, currentRound);
 
 		return {
 			phase,
 			nextQueries: nextQueriesEnvelope,
 			stats,
-			openQuestions,
+			openPropositions,
 			gaps,
 			workflowChecklist: {
 				tasksFile: checklist.tasksFile,
@@ -173,16 +158,16 @@ export class ResearchService {
 
 	private buildPhaseMessage(
 		phase: ResearchPhase,
-		openQuestions: BaseNode[],
-		gaps: BaseNode[],
+		openPropositions: BaseNode[],
+		gaps: GapResult[],
 		stats: ReturnType<GraphService["getStats"]>,
 		round: number,
 	): string {
 		switch (phase) {
 			case "search":
-				return `[第 ${round} 轮] 需要进行搜索以推进研究。当前有 ${openQuestions.length} 个待解决问题和 ${gaps.length} 个缺口。请使用 nextQueries 中的搜索词进行搜索。`;
+				return `[第 ${round} 轮] 需要进行搜索以推进研究。当前有 ${openPropositions.length} 个待解决命题和 ${gaps.length} 个缺口。`;
 			case "extract":
-				return `[第 ${round} 轮] 已有 ${stats.nodeCountByKind["Source"] ?? 0} 个来源，需要提取实体/断言。请对已获取的来源执行提取任务。`;
+				return `[第 ${round} 轮] 已有 ${stats.nodeCountByType["Source"] ?? 0} 个来源，需要提取实体/命题/关系。`;
 			case "normalize":
 				return `[第 ${round} 轮] 需要对知识图谱进行规范化（去重、合并相似节点）。`;
 			case "gap_detection":

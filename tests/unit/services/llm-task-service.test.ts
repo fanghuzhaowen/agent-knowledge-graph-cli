@@ -1,8 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { GraphStore } from "../../../src/storage/graph-store";
 import { GraphService } from "../../../src/core/services/graph-service";
-import { ClaimService } from "../../../src/core/services/claim-service";
-import { QuestionService } from "../../../src/core/services/question-service";
+import { PropositionService } from "../../../src/core/services/proposition-service";
 import { GapService } from "../../../src/core/services/gap-service";
 import { EvidenceService } from "../../../src/core/services/evidence-service";
 import { LlmTaskService } from "../../../src/core/services/llm-task-service";
@@ -17,8 +16,7 @@ import { now } from "../../../src/utils/time";
 function createTestStore(): {
 	store: GraphStore;
 	graphService: GraphService;
-	claimService: ClaimService;
-	questionService: QuestionService;
+	propositionService: PropositionService;
 	gapService: GapService;
 	evidenceService: EvidenceService;
 	taskChecklistService: TaskChecklistService;
@@ -28,15 +26,13 @@ function createTestStore(): {
 	const store = new GraphStore(dir);
 	const graphService = new GraphService(store);
 	const evidenceService = new EvidenceService(store, graphService);
-	const claimService = new ClaimService(store, graphService);
-	const questionService = new QuestionService(store, graphService);
+	const propositionService = new PropositionService(store, graphService);
 	const gapService = new GapService(store, graphService);
 	const taskChecklistService = new TaskChecklistService(store);
 	return {
 		store,
 		graphService,
-		claimService,
-		questionService,
+		propositionService,
 		gapService,
 		evidenceService,
 		taskChecklistService,
@@ -64,8 +60,7 @@ function createService(context: ReturnType<typeof createTestStore>) {
 	return new LlmTaskService(
 		context.store,
 		context.graphService,
-		context.claimService,
-		context.questionService,
+		context.propositionService,
 		context.gapService,
 		context.evidenceService,
 		context.taskChecklistService,
@@ -163,11 +158,11 @@ describe("LlmTaskService", () => {
 		validateEnvelope(envelope, "next_search_queries");
 	});
 
-	it("should build assess-evidence task envelope", () => {
+	it("should build assess-evidence task envelope using proposition", () => {
 		context = createTestStore();
 		const service = createService(context);
-		const claim = context.claimService.addClaim({ text: "Test claim" });
-		const envelope = service.buildAssessEvidenceTask(claim.id);
+		const prop = context.propositionService.addProposition({ text: "Test proposition", status: "asserted" });
+		const envelope = service.buildAssessEvidenceTask(prop.id);
 		validateEnvelope(envelope, "assess_evidence");
 	});
 

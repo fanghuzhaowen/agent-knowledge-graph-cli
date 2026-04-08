@@ -23,7 +23,7 @@ export interface ReportData {
 		status: string;
 	}>;
 	gaps: Array<{
-		id: string;
+		targetId: string;
 		text: string;
 		gapType: string;
 		severity: number;
