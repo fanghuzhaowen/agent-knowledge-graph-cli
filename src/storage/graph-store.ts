@@ -38,6 +38,20 @@ export function emptyGraphData(): GraphData {
 	};
 }
 
+// ── Legacy node kind → new type migration map ──
+
+const KIND_TO_TYPE: Record<string, { type: BaseNode["type"]; defaultStatus?: string }> = {
+	Entity: { type: "Entity" },
+	Source: { type: "Source" },
+	Evidence: { type: "Evidence" },
+	Claim: { type: "Proposition", defaultStatus: "asserted" },
+	Question: { type: "Proposition", defaultStatus: "open" },
+	Hypothesis: { type: "Proposition", defaultStatus: "hypothesized" },
+	Observation: { type: "Proposition", defaultStatus: "unrefined" },
+	Value: { type: "Evidence" },
+	Gap: { type: "Proposition", defaultStatus: "open" },
+};
+
 // ── Graph Store ──
 
 export class GraphStore {
@@ -50,6 +64,7 @@ export class GraphStore {
 		if (existsSync(this.filePath)) {
 			const raw = readFileSync(this.filePath, "utf-8");
 			this.data = JSON.parse(raw) as GraphData;
+			this.migrateNodes();
 			this.migrateEvidenceLinks();
 		} else {
 			mkdirSync(dir, { recursive: true });
@@ -59,15 +74,64 @@ export class GraphStore {
 	}
 
 	/**
+	 * Migrate legacy nodes with `kind` field to new `type` field.
+	 * Old kinds like Claim, Question, etc. are mapped to Proposition with appropriate status.
+	 */
+	private migrateNodes(): void {
+		let migrated = false;
+
+		for (const [id, node] of Object.entries(this.data.nodes)) {
+			const legacy = node as unknown as Record<string, unknown>;
+			if (!legacy.kind || legacy.type) continue;
+
+			const mapping = KIND_TO_TYPE[legacy.kind as string];
+			if (!mapping) {
+				console.warn(`[kg migration] Unknown node kind "${String(legacy.kind)}" for node ${id}, skipping`);
+				continue;
+			}
+
+			// Convert kind → type
+			(legacy as any).type = mapping.type;
+			if (mapping.defaultStatus && !legacy.status) {
+				(legacy as any).status = mapping.defaultStatus;
+			}
+
+			// Move old sub-type field to attrs where applicable
+			if (legacy.kind === "Entity" && legacy.type && typeof legacy.type === "string" && legacy.type !== "Entity") {
+				// Old Entity had entityType in `type` field (e.g. type: "Person")
+				legacy.attrs = { ...(legacy.attrs as Record<string, unknown>), entityType: legacy.type };
+			}
+			if (legacy.kind === "Source" && legacy.type && typeof legacy.type === "string" && legacy.type !== "Source") {
+				// Old Source had sourceType in `type` field (e.g. type: "webpage")
+				legacy.attrs = { ...(legacy.attrs as Record<string, unknown>), sourceType: legacy.type };
+			}
+
+			delete (legacy as any).kind;
+			migrated = true;
+		}
+
+		if (migrated) {
+			this.dirty = true;
+			this.save();
+		}
+	}
+
+	/**
 	 * Migrate legacy evidenceLinks to edges with type "evidence_link".
-	 * Called once on load if legacy data is present.
+	 * Skips links referencing non-existent nodes.
 	 */
 	private migrateEvidenceLinks(): void {
 		if (!this.data.evidenceLinks || Object.keys(this.data.evidenceLinks).length === 0) {
 			return;
 		}
 
-		for (const link of Object.values(this.data.evidenceLinks)) {
+		for (const [linkId, link] of Object.entries(this.data.evidenceLinks)) {
+			// Skip links referencing non-existent evidence nodes
+			if (!this.data.nodes[link.evidenceId]) {
+				console.warn(`[kg migration] Skipping evidence link ${linkId}: evidence node ${link.evidenceId} not found`);
+				continue;
+			}
+
 			const edge: Edge = {
 				id: link.id,
 				type: "evidence_link",
@@ -82,13 +146,12 @@ export class GraphStore {
 				createdAt: link.createdAt,
 				updatedAt: link.createdAt,
 			};
-			// Only migrate if not already present
+
 			if (!this.data.edges[edge.id]) {
 				this.data.edges[edge.id] = edge;
 			}
 		}
 
-		// Remove legacy data
 		delete this.data.evidenceLinks;
 		this.dirty = true;
 		this.save();
