@@ -52,7 +52,7 @@ An LLM's reasoning quality depends on context quality. `kg` provides agents with
 
 - **Graph-as-Memory** — Agents no longer rely on sliding context windows or vector retrieval. Instead, they store and reason over knowledge through a semantic network of entities, propositions, evidence, and sources
 - **Zero Model Coupling** — The CLI never calls any LLM API. It outputs standardized `LlmTaskEnvelope` objects (containing context, instructions, prompt templates, and output schemas), letting agents freely choose their model and invocation strategy
-- **Evidence Chain Tracking** — Every Proposition traces back to its original Source -> Evidence -> evidence_link edge relationship, supporting multiple evidence roles (`supports`, `contradicts`, `weakly_supported`). Agents achieve genuine evidence-based reasoning
+- **Evidence Chain Tracking** — Every Proposition traces back to its original Source -> Evidence -> evidence_link edge relationship, supporting multiple evidence roles (`supports`, `contradicts`, `mentions`, `qualifies`). Agents achieve genuine evidence-based reasoning
 - **Unified Proposition Model** — Questions, hypotheses, claims, and observations are all represented as Proposition nodes with a 12-state lifecycle, simplifying the graph while preserving full expressiveness
 - **Computed Gap Detection** — `graph gaps --detect` returns computed `GapResult[]` — proactively discovering knowledge blind spots (unsubstantiated propositions, unanswered questions, orphaned nodes) without storing Gap nodes in the graph
 - **Iterative Research Loop** — `task continue` orchestrates the full "search -> extract -> challenge -> fill gaps" cycle. Agents complete deep research simply by looping
@@ -133,7 +133,7 @@ kg node list --dir $DIR
 ```bash
 # Nodes
 kg node get <id> --dir <dir>
-kg node list [--type Entity] [--status open] --dir <dir>
+kg node list [--kind Entity] [--status open] --dir <dir>
 kg node upsert --json-in data.json --dir <dir>
 kg node delete <id> --dir <dir>
 
@@ -144,7 +144,7 @@ kg edge list [--from ent_1] [--type related_to] --dir <dir>
 kg edge delete <id> --dir <dir>
 ```
 
-> Note: `--kind` is still accepted as an alias for `--type` in all node commands.
+> Note: Use `--kind` to filter node types (e.g., `--kind Entity`, `--kind Proposition`).
 
 ### Evidence Management
 
@@ -184,7 +184,7 @@ kg node conflicts prop_1 --dir <dir>
 kg node merge prop_1 prop_2 --dir <dir>
 
 # List open questions
-kg node list --type Proposition --status open --dir <dir>
+kg node list --kind Proposition --status open --dir <dir>
 ```
 
 ### Graph Queries
@@ -387,13 +387,15 @@ unrefined -> open -> hypothesized -> asserted -> evaluating -> supported
 ```json
 [
   {
-    "gapType": "unsubstantiated_proposition",
-    "nodeId": "prop_5",
+    "gapType": "missing_evidence",
+    "targetId": "prop_5",
+    "severity": 0.8,
     "description": "Proposition has no supporting or contradicting evidence"
   },
   {
-    "gapType": "unanswered_question",
-    "nodeId": "prop_3",
+    "gapType": "unanswered",
+    "targetId": "prop_3",
+    "severity": 0.6,
     "description": "Question has no answer proposition linked via 'answers' edge"
   }
 ]

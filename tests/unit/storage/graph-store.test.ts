@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { GraphStore, emptyGraphData } from "../../../src/storage/graph-store";
 import type { BaseNode, Edge, Task, OpLog } from "../../../src/core/models/types";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -477,5 +477,213 @@ describe("GraphStore - Save/Load", () => {
 		context.store.save();
 		const stat2 = readFileSync(context.store.path, "utf-8");
 		expect(stat1).toBe(stat2);
+	});
+});
+
+// ── Data Migration ──
+
+describe("GraphStore - Migration", () => {
+	it("should migrate legacy nodes with kind field to type field", () => {
+		const dir = mkdtempSync(join(tmpdir(), "kg-migrate-"));
+		const filePath = join(dir, "kg.json");
+		mkdirSync(dir, { recursive: true });
+
+		const legacyData = {
+			nodes: {
+				"ent_1": { id: "ent_1", kind: "Entity", title: "OpenAI", attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+				"prop_1": { id: "prop_1", kind: "Claim", text: "GPT-5 is released.", status: undefined, attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+				"prop_2": { id: "prop_2", kind: "Question", text: "What is AGI?", status: undefined, attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+				"prop_3": { id: "prop_3", kind: "Hypothesis", text: "AGI will emerge by 2030.", status: undefined, attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+				"prop_4": { id: "prop_4", kind: "Observation", text: "Model performance doubled.", status: undefined, attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+				"ev_1": { id: "ev_1", kind: "Value", text: "99.5%", attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+				"prop_5": { id: "prop_5", kind: "Gap", text: "Missing data on X.", status: undefined, attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+			},
+			edges: {},
+			tasks: {},
+			nodeTaskLinks: [],
+			opLogs: [],
+		};
+		writeFileSync(filePath, JSON.stringify(legacyData), "utf-8");
+
+		const store = new GraphStore(dir);
+		const raw = readFileSync(filePath, "utf-8");
+		const migrated = JSON.parse(raw);
+
+		// Entity: kind → type
+		expect(migrated.nodes["ent_1"].type).toBe("Entity");
+		expect(migrated.nodes["ent_1"].kind).toBeUndefined();
+
+		// Claim → Proposition with asserted status
+		expect(migrated.nodes["prop_1"].type).toBe("Proposition");
+		expect(migrated.nodes["prop_1"].status).toBe("asserted");
+
+		// Question → Proposition with open status
+		expect(migrated.nodes["prop_2"].type).toBe("Proposition");
+		expect(migrated.nodes["prop_2"].status).toBe("open");
+
+		// Hypothesis → Proposition with hypothesized status
+		expect(migrated.nodes["prop_3"].type).toBe("Proposition");
+		expect(migrated.nodes["prop_3"].status).toBe("hypothesized");
+
+		// Observation → Proposition with unrefined status
+		expect(migrated.nodes["prop_4"].type).toBe("Proposition");
+		expect(migrated.nodes["prop_4"].status).toBe("unrefined");
+
+		// Value → Evidence
+		expect(migrated.nodes["ev_1"].type).toBe("Evidence");
+
+		// Gap → Proposition with open status
+		expect(migrated.nodes["prop_5"].type).toBe("Proposition");
+		expect(migrated.nodes["prop_5"].status).toBe("open");
+
+		rmSync(dir, { recursive: true });
+	});
+
+	it("should not migrate nodes that already have type field", () => {
+		const dir = mkdtempSync(join(tmpdir(), "kg-migrate-"));
+		const filePath = join(dir, "kg.json");
+		mkdirSync(dir, { recursive: true });
+
+		const data = {
+			nodes: {
+				"ent_1": { id: "ent_1", type: "Entity", title: "OpenAI", attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+			},
+			edges: {},
+			tasks: {},
+			nodeTaskLinks: [],
+			opLogs: [],
+		};
+		writeFileSync(filePath, JSON.stringify(data), "utf-8");
+
+		const store = new GraphStore(dir);
+		const got = store.getNode("ent_1");
+		expect(got?.type).toBe("Entity");
+
+		rmSync(dir, { recursive: true });
+	});
+
+	it("should migrate legacy evidenceLinks to edges", () => {
+		const dir = mkdtempSync(join(tmpdir(), "kg-migrate-"));
+		const filePath = join(dir, "kg.json");
+		mkdirSync(dir, { recursive: true });
+
+		const data = {
+			nodes: {
+				"ev_1": { id: "ev_1", type: "Evidence", text: "Evidence text", attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+				"prop_1": { id: "prop_1", type: "Proposition", text: "A claim.", status: "asserted", attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+			},
+			edges: {},
+			tasks: {},
+			nodeTaskLinks: [],
+			opLogs: [],
+			evidenceLinks: {
+				"link_1": {
+					id: "link_1",
+					evidenceId: "ev_1",
+					targetType: "node",
+					targetId: "prop_1",
+					role: "supports",
+					confidence: 0.9,
+					createdAt: "2026-01-01T00:00:00Z",
+				},
+			},
+		};
+		writeFileSync(filePath, JSON.stringify(data), "utf-8");
+
+		const store = new GraphStore(dir);
+		const raw = readFileSync(filePath, "utf-8");
+		const migrated = JSON.parse(raw);
+
+		// evidenceLinks should be removed
+		expect(migrated.evidenceLinks).toBeUndefined();
+
+		// Should have created an edge with type evidence_link
+		const edges = store.listEdges((e) => e.type === "evidence_link");
+		expect(edges).toHaveLength(1);
+		expect(edges[0].fromId).toBe("ev_1");
+		expect(edges[0].toId).toBe("prop_1");
+		expect(edges[0].attrs.role).toBe("supports");
+		expect(edges[0].attrs.targetType).toBe("node");
+		expect(edges[0].confidence).toBe(0.9);
+
+		rmSync(dir, { recursive: true });
+	});
+
+	it("should skip evidence links with missing evidence nodes", () => {
+		const dir = mkdtempSync(join(tmpdir(), "kg-migrate-"));
+		const filePath = join(dir, "kg.json");
+		mkdirSync(dir, { recursive: true });
+
+		const data = {
+			nodes: {
+				"prop_1": { id: "prop_1", type: "Proposition", text: "A claim.", status: "asserted", attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+			},
+			edges: {},
+			tasks: {},
+			nodeTaskLinks: [],
+			opLogs: [],
+			evidenceLinks: {
+				"link_1": {
+					id: "link_1",
+					evidenceId: "ev_missing",
+					targetType: "node",
+					targetId: "prop_1",
+					role: "supports",
+					createdAt: "2026-01-01T00:00:00Z",
+				},
+			},
+		};
+		writeFileSync(filePath, JSON.stringify(data), "utf-8");
+
+		const store = new GraphStore(dir);
+		const edges = store.listEdges((e) => e.type === "evidence_link");
+		expect(edges).toHaveLength(0);
+
+		rmSync(dir, { recursive: true });
+	});
+
+	it("should not duplicate edges if link id already exists", () => {
+		const dir = mkdtempSync(join(tmpdir(), "kg-migrate-"));
+		const filePath = join(dir, "kg.json");
+		mkdirSync(dir, { recursive: true });
+
+		const data = {
+			nodes: {
+				"ev_1": { id: "ev_1", type: "Evidence", text: "Evidence text", attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+				"prop_1": { id: "prop_1", type: "Proposition", text: "A claim.", status: "asserted", attrs: {}, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+			},
+			edges: {
+				"link_1": {
+					id: "link_1",
+					type: "evidence_link",
+					fromId: "ev_1",
+					toId: "prop_1",
+					directed: true,
+					attrs: { role: "supports" },
+					createdAt: "2026-01-01T00:00:00Z",
+					updatedAt: "2026-01-01T00:00:00Z",
+				},
+			},
+			tasks: {},
+			nodeTaskLinks: [],
+			opLogs: [],
+			evidenceLinks: {
+				"link_1": {
+					id: "link_1",
+					evidenceId: "ev_1",
+					targetType: "node",
+					targetId: "prop_1",
+					role: "supports",
+					createdAt: "2026-01-01T00:00:00Z",
+				},
+			},
+		};
+		writeFileSync(filePath, JSON.stringify(data), "utf-8");
+
+		const store = new GraphStore(dir);
+		const edges = store.listEdges((e) => e.type === "evidence_link");
+		expect(edges).toHaveLength(1);
+
+		rmSync(dir, { recursive: true });
 	});
 });

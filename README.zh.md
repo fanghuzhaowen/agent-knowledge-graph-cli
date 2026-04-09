@@ -52,7 +52,7 @@
 
 - **图谱即记忆** — Agent 不再依赖滑动窗口或向量检索，而是通过实体、命题、证据、来源的语义关系网络来存取和推理知识
 - **零模型耦合** — CLI 不调用任何 LLM API，只输出标准化的 `LlmTaskEnvelope`（含上下文、指令、prompt 模板、输出 schema），Agent 自由选择模型和调用方式
-- **证据链追踪** — 每条 Proposition 都可通过 `evidence_link` 边溯源到原始 Source -> Evidence 关系，支持 `supports / contradicts / weakly_supported` 等多种证据角色，Agent 能做到真正的循证推理
+- **证据链追踪** — 每条 Proposition 都可通过 `evidence_link` 边溯源到原始 Source -> Evidence 关系，支持 `supports / contradicts / mentions / qualifies` 等多种证据角色，Agent 能做到真正的循证推理
 - **统一命题模型** — 问题、假设、断言、观察统一为 Proposition 节点，12 种状态覆盖完整生命周期，简化图谱同时保持充分表达力
 - **计算式缺口检测** — `graph gaps --detect` 返回计算得出的 `GapResult[]`，主动发现知识盲区（无证据支撑的命题、未回答的问题、孤立节点），无需在图谱中存储 Gap 节点
 - **迭代式研究循环** — `task continue` 编排完整的"搜索->提取->质疑->补缺"循环，Agent 只需循环调用即可完成深度调研
@@ -133,7 +133,7 @@ kg node list --dir $DIR
 ```bash
 # 节点
 kg node get <id> --dir <dir>
-kg node list [--type Entity] [--status open] --dir <dir>
+kg node list [--kind Entity] [--status open] --dir <dir>
 kg node upsert --json-in data.json --dir <dir>
 kg node delete <id> --dir <dir>
 
@@ -144,7 +144,7 @@ kg edge list [--from ent_1] [--type related_to] --dir <dir>
 kg edge delete <id> --dir <dir>
 ```
 
-> 注意：所有节点命令仍支持 `--kind` 作为 `--type` 的别名。
+> 注意：使用 `--kind` 过滤节点类型（如 `--kind Entity`、`--kind Proposition`）。
 
 ### 证据管理
 
@@ -184,7 +184,7 @@ kg node conflicts prop_1 --dir <dir>
 kg node merge prop_1 prop_2 --dir <dir>
 
 # 列出未解决问题
-kg node list --type Proposition --status open --dir <dir>
+kg node list --kind Proposition --status open --dir <dir>
 ```
 
 ### 图谱查询
@@ -387,13 +387,15 @@ unrefined -> open -> hypothesized -> asserted -> evaluating -> supported
 ```json
 [
   {
-    "gapType": "unsubstantiated_proposition",
-    "nodeId": "prop_5",
+    "gapType": "missing_evidence",
+    "targetId": "prop_5",
+    "severity": 0.8,
     "description": "Proposition has no supporting or contradicting evidence"
   },
   {
-    "gapType": "unanswered_question",
-    "nodeId": "prop_3",
+    "gapType": "unanswered",
+    "targetId": "prop_3",
+    "severity": 0.6,
     "description": "Question has no answer proposition linked via 'answers' edge"
   }
 ]
